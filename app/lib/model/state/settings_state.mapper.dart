@@ -64,6 +64,21 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
     'networkBlacklist',
     _$networkBlacklist,
   );
+  static List<String> _$bindInterfaces(SettingsState v) => v.bindInterfaces;
+  static const Field<SettingsState, List<String>> _f$bindInterfaces = Field(
+    'bindInterfaces',
+    _$bindInterfaces,
+  );
+  static List<String> _$extraSubnets(SettingsState v) => v.extraSubnets;
+  static const Field<SettingsState, List<String>> _f$extraSubnets = Field(
+    'extraSubnets',
+    _$extraSubnets,
+  );
+  static List<String> _$peerIps(SettingsState v) => v.peerIps;
+  static const Field<SettingsState, List<String>> _f$peerIps = Field(
+    'peerIps',
+    _$peerIps,
+  );
   static String _$multicastGroup(SettingsState v) => v.multicastGroup;
   static const Field<SettingsState, String> _f$multicastGroup = Field(
     'multicastGroup',
@@ -186,6 +201,9 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
     #port: _f$port,
     #networkWhitelist: _f$networkWhitelist,
     #networkBlacklist: _f$networkBlacklist,
+    #bindInterfaces: _f$bindInterfaces,
+    #extraSubnets: _f$extraSubnets,
+    #peerIps: _f$peerIps,
     #multicastGroup: _f$multicastGroup,
     #destination: _f$destination,
     #saveToGallery: _f$saveToGallery,
@@ -221,6 +239,9 @@ class SettingsStateMapper extends ClassMapperBase<SettingsState> {
       port: data.dec(_f$port),
       networkWhitelist: data.dec(_f$networkWhitelist),
       networkBlacklist: data.dec(_f$networkBlacklist),
+      bindInterfaces: data.dec(_f$bindInterfaces),
+      extraSubnets: data.dec(_f$extraSubnets),
+      peerIps: data.dec(_f$peerIps),
       multicastGroup: data.dec(_f$multicastGroup),
       destination: data.dec(_f$destination),
       saveToGallery: data.dec(_f$saveToGallery),
@@ -312,6 +333,10 @@ abstract class SettingsStateCopyWith<$R, $In extends SettingsState, $Out>
   get networkWhitelist;
   ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>?
   get networkBlacklist;
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
+  get bindInterfaces;
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>> get extraSubnets;
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>> get peerIps;
   $R call({
     String? showToken,
     String? alias,
@@ -322,6 +347,9 @@ abstract class SettingsStateCopyWith<$R, $In extends SettingsState, $Out>
     int? port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    List<String>? bindInterfaces,
+    List<String>? extraSubnets,
+    List<String>? peerIps,
     String? multicastGroup,
     String? destination,
     bool? saveToGallery,
@@ -375,6 +403,27 @@ class _SettingsStateCopyWithImpl<$R, $Out>
         )
       : null;
   @override
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
+  get bindInterfaces => ListCopyWith(
+    $value.bindInterfaces,
+    (v, t) => ObjectCopyWith(v, $identity, t),
+    (v) => call(bindInterfaces: v),
+  );
+  @override
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
+  get extraSubnets => ListCopyWith(
+    $value.extraSubnets,
+    (v, t) => ObjectCopyWith(v, $identity, t),
+    (v) => call(extraSubnets: v),
+  );
+  @override
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>> get peerIps =>
+      ListCopyWith(
+        $value.peerIps,
+        (v, t) => ObjectCopyWith(v, $identity, t),
+        (v) => call(peerIps: v),
+      );
+  @override
   $R call({
     String? showToken,
     String? alias,
@@ -385,6 +434,9 @@ class _SettingsStateCopyWithImpl<$R, $Out>
     int? port,
     Object? networkWhitelist = $none,
     Object? networkBlacklist = $none,
+    List<String>? bindInterfaces,
+    List<String>? extraSubnets,
+    List<String>? peerIps,
     String? multicastGroup,
     Object? destination = $none,
     bool? saveToGallery,
@@ -418,6 +470,9 @@ class _SettingsStateCopyWithImpl<$R, $Out>
       if (port != null) #port: port,
       if (networkWhitelist != $none) #networkWhitelist: networkWhitelist,
       if (networkBlacklist != $none) #networkBlacklist: networkBlacklist,
+      if (bindInterfaces != null) #bindInterfaces: bindInterfaces,
+      if (extraSubnets != null) #extraSubnets: extraSubnets,
+      if (peerIps != null) #peerIps: peerIps,
       if (multicastGroup != null) #multicastGroup: multicastGroup,
       if (destination != $none) #destination: destination,
       if (saveToGallery != null) #saveToGallery: saveToGallery,
@@ -457,6 +512,9 @@ class _SettingsStateCopyWithImpl<$R, $Out>
     port: data.get(#port, or: $value.port),
     networkWhitelist: data.get(#networkWhitelist, or: $value.networkWhitelist),
     networkBlacklist: data.get(#networkBlacklist, or: $value.networkBlacklist),
+    bindInterfaces: data.get(#bindInterfaces, or: $value.bindInterfaces),
+    extraSubnets: data.get(#extraSubnets, or: $value.extraSubnets),
+    peerIps: data.get(#peerIps, or: $value.peerIps),
     multicastGroup: data.get(#multicastGroup, or: $value.multicastGroup),
     destination: data.get(#destination, or: $value.destination),
     saveToGallery: data.get(#saveToGallery, or: $value.saveToGallery),

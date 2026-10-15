@@ -75,6 +75,9 @@ const _customColorKey = 'ls_custom_color'; // RRGGBB hex, used by ColorMode.cust
 const _localeKey = 'ls_locale';
 const _portKey = 'ls_port';
 const _networkWhitelistKey = 'ls_network_whitelist';
+const _bindInterfacesKey = 'ls_bind_interfaces';
+const _extraSubnetsKey = 'ls_extra_subnets';
+const _peerIpsKey = 'ls_peer_ips';
 const _networkBlacklistKey = 'ls_network_blacklist';
 const _timeoutKey = 'ls_timeout';
 const _multicastGroupKey = 'ls_multicast_group';
@@ -358,6 +361,33 @@ class PersistenceService {
     } else {
       await _prefs.setStringList(_networkWhitelistKey, whitelist);
     }
+  }
+
+  /// Interface names to bind to. Empty = all interfaces (default).
+  List<String> getBindInterfaces() {
+    return _prefs.getStringList(_bindInterfacesKey) ?? const [];
+  }
+
+  Future<void> setBindInterfaces(List<String> interfaces) async {
+    await _prefs.setStringList(_bindInterfacesKey, interfaces);
+  }
+
+  /// Extra subnets to scan (CIDR or `a.b.c.*`). Empty by default.
+  List<String> getExtraSubnets() {
+    return _prefs.getStringList(_extraSubnetsKey) ?? const [];
+  }
+
+  Future<void> setExtraSubnets(List<String> subnets) async {
+    await _prefs.setStringList(_extraSubnetsKey, subnets);
+  }
+
+  /// User-entered peer IPs to probe. Empty by default.
+  List<String> getPeerIps() {
+    return _prefs.getStringList(_peerIpsKey) ?? const [];
+  }
+
+  Future<void> setPeerIps(List<String> ips) async {
+    await _prefs.setStringList(_peerIpsKey, ips);
   }
 
   List<String>? getNetworkBlacklist() {

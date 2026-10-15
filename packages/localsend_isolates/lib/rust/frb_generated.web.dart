@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 import 'package:localsend_isolates/rust/api/cancel.dart';
 import 'package:localsend_isolates/rust/api/crypto.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart';
 import 'package:localsend_isolates/rust/api/discovery.dart';
 import 'package:localsend_isolates/rust/api/filename.dart';
 import 'package:localsend_isolates/rust/api/http.dart';
@@ -280,6 +281,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RTCSendFileResponse dco_decode_box_autoadd_rtc_send_file_response(dynamic raw);
 
   @protected
+  StartError dco_decode_box_autoadd_start_error(dynamic raw);
+
+  @protected
   TlsConfig dco_decode_box_autoadd_tls_config(dynamic raw);
 
   @protected
@@ -304,6 +308,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeviceType dco_decode_device_type(dynamic raw);
 
   @protected
+  Diagnostics dco_decode_diagnostics(dynamic raw);
+
+  @protected
   ExpectingPublicKey dco_decode_expecting_public_key(dynamic raw);
 
   @protected
@@ -319,7 +326,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int dco_decode_i_32(dynamic raw);
 
   @protected
+  InterfaceDiag dco_decode_interface_diag(dynamic raw);
+
+  @protected
   PlatformInt64 dco_decode_isize(dynamic raw);
+
+  @protected
+  JoinResult dco_decode_join_result(dynamic raw);
 
   @protected
   KeyPair dco_decode_key_pair(dynamic raw);
@@ -332,6 +345,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<FileDto> dco_decode_list_file_dto(dynamic raw);
+
+  @protected
+  List<InterfaceDiag> dco_decode_list_interface_diag(dynamic raw);
+
+  @protected
+  List<PeerProbeResult> dco_decode_list_peer_probe_result(dynamic raw);
 
   @protected
   List<int> dco_decode_list_prim_u_8_loose(dynamic raw);
@@ -392,7 +411,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List? dco_decode_opt_list_prim_u_8_strict(dynamic raw);
 
   @protected
+  PeerProbeResult dco_decode_peer_probe_result(dynamic raw);
+
+  @protected
+  PeerSource dco_decode_peer_source(dynamic raw);
+
+  @protected
   PinConfig dco_decode_pin_config(dynamic raw);
+
+  @protected
+  PortStatus dco_decode_port_status(dynamic raw);
 
   @protected
   PrepareUploadRequestDto dco_decode_prepare_upload_request_dto(dynamic raw);
@@ -471,6 +499,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SessionEndReasonV2 dco_decode_session_end_reason_v_2(dynamic raw);
+
+  @protected
+  StartError dco_decode_start_error(dynamic raw);
 
   @protected
   TlsConfig dco_decode_tls_config(dynamic raw);
@@ -744,6 +775,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   RTCSendFileResponse sse_decode_box_autoadd_rtc_send_file_response(SseDeserializer deserializer);
 
   @protected
+  StartError sse_decode_box_autoadd_start_error(SseDeserializer deserializer);
+
+  @protected
   TlsConfig sse_decode_box_autoadd_tls_config(SseDeserializer deserializer);
 
   @protected
@@ -768,6 +802,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   DeviceType sse_decode_device_type(SseDeserializer deserializer);
 
   @protected
+  Diagnostics sse_decode_diagnostics(SseDeserializer deserializer);
+
+  @protected
   ExpectingPublicKey sse_decode_expecting_public_key(SseDeserializer deserializer);
 
   @protected
@@ -783,7 +820,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   int sse_decode_i_32(SseDeserializer deserializer);
 
   @protected
+  InterfaceDiag sse_decode_interface_diag(SseDeserializer deserializer);
+
+  @protected
   PlatformInt64 sse_decode_isize(SseDeserializer deserializer);
+
+  @protected
+  JoinResult sse_decode_join_result(SseDeserializer deserializer);
 
   @protected
   KeyPair sse_decode_key_pair(SseDeserializer deserializer);
@@ -796,6 +839,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   List<FileDto> sse_decode_list_file_dto(SseDeserializer deserializer);
+
+  @protected
+  List<InterfaceDiag> sse_decode_list_interface_diag(SseDeserializer deserializer);
+
+  @protected
+  List<PeerProbeResult> sse_decode_list_peer_probe_result(SseDeserializer deserializer);
 
   @protected
   List<int> sse_decode_list_prim_u_8_loose(SseDeserializer deserializer);
@@ -858,7 +907,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   Uint8List? sse_decode_opt_list_prim_u_8_strict(SseDeserializer deserializer);
 
   @protected
+  PeerProbeResult sse_decode_peer_probe_result(SseDeserializer deserializer);
+
+  @protected
+  PeerSource sse_decode_peer_source(SseDeserializer deserializer);
+
+  @protected
   PinConfig sse_decode_pin_config(SseDeserializer deserializer);
+
+  @protected
+  PortStatus sse_decode_port_status(SseDeserializer deserializer);
 
   @protected
   PrepareUploadRequestDto sse_decode_prepare_upload_request_dto(SseDeserializer deserializer);
@@ -937,6 +995,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   SessionEndReasonV2 sse_decode_session_end_reason_v_2(SseDeserializer deserializer);
+
+  @protected
+  StartError sse_decode_start_error(SseDeserializer deserializer);
 
   @protected
   TlsConfig sse_decode_tls_config(SseDeserializer deserializer);
@@ -1255,6 +1316,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_box_autoadd_rtc_send_file_response(RTCSendFileResponse self, SseSerializer serializer);
 
   @protected
+  void sse_encode_box_autoadd_start_error(StartError self, SseSerializer serializer);
+
+  @protected
   void sse_encode_box_autoadd_tls_config(TlsConfig self, SseSerializer serializer);
 
   @protected
@@ -1279,6 +1343,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_device_type(DeviceType self, SseSerializer serializer);
 
   @protected
+  void sse_encode_diagnostics(Diagnostics self, SseSerializer serializer);
+
+  @protected
   void sse_encode_expecting_public_key(ExpectingPublicKey self, SseSerializer serializer);
 
   @protected
@@ -1294,7 +1361,13 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_i_32(int self, SseSerializer serializer);
 
   @protected
+  void sse_encode_interface_diag(InterfaceDiag self, SseSerializer serializer);
+
+  @protected
   void sse_encode_isize(PlatformInt64 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_join_result(JoinResult self, SseSerializer serializer);
 
   @protected
   void sse_encode_key_pair(KeyPair self, SseSerializer serializer);
@@ -1307,6 +1380,12 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_list_file_dto(List<FileDto> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_interface_diag(List<InterfaceDiag> self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_list_peer_probe_result(List<PeerProbeResult> self, SseSerializer serializer);
 
   @protected
   void sse_encode_list_prim_u_8_loose(List<int> self, SseSerializer serializer);
@@ -1369,7 +1448,16 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
   void sse_encode_opt_list_prim_u_8_strict(Uint8List? self, SseSerializer serializer);
 
   @protected
+  void sse_encode_peer_probe_result(PeerProbeResult self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_peer_source(PeerSource self, SseSerializer serializer);
+
+  @protected
   void sse_encode_pin_config(PinConfig self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_port_status(PortStatus self, SseSerializer serializer);
 
   @protected
   void sse_encode_prepare_upload_request_dto(PrepareUploadRequestDto self, SseSerializer serializer);
@@ -1449,6 +1537,9 @@ abstract class RustLibApiImplPlatform extends BaseApiImpl<RustLibWire> {
 
   @protected
   void sse_encode_session_end_reason_v_2(SessionEndReasonV2 self, SseSerializer serializer);
+
+  @protected
+  void sse_encode_start_error(StartError self, SseSerializer serializer);
 
   @protected
   void sse_encode_tls_config(TlsConfig self, SseSerializer serializer);

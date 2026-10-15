@@ -18,6 +18,9 @@ class SettingsState with SettingsStateMappable {
   final int port;
   final List<String>? networkWhitelist; // null = disabled
   final List<String>? networkBlacklist; // null = disabled
+  final List<String> bindInterfaces; // interface names to bind to; empty = all interfaces
+  final List<String> extraSubnets; // extra subnets to scan (CIDR or a.b.c.*); empty = none
+  final List<String> peerIps; // user-entered peer IPs to probe (e.g. tailnet / /32); empty = none
   final String multicastGroup;
   final String? destination; // null = default
   final bool saveToGallery; // only Android, iOS
@@ -51,6 +54,9 @@ class SettingsState with SettingsStateMappable {
     required this.port,
     required this.networkWhitelist,
     required this.networkBlacklist,
+    required this.bindInterfaces,
+    required this.extraSubnets,
+    required this.peerIps,
     required this.multicastGroup,
     required this.destination,
     required this.saveToGallery,

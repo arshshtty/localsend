@@ -1,5 +1,6 @@
 pub mod cancel;
 pub mod crypto;
+pub mod diagnostics;
 pub mod discovery;
 pub mod filename;
 pub mod http;
