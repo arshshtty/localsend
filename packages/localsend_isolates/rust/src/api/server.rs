@@ -8,7 +8,7 @@ use localsend::http::server::internal::{InternalConfig, InternalEvent};
 pub use localsend::http::server::v2::SessionEndReasonV2;
 use localsend::http::server::v2::{PrepareUploadDecisionV2, ServerEventV2};
 use localsend::http::server::web::{
-    WebConfig, WebMode as CoreWebMode, WebDownloadConfig, WebDownloadEvent,
+    WebConfig, WebDownloadConfig, WebDownloadEvent, WebMode as CoreWebMode,
 };
 pub use localsend::http::server::web::{WebI18n, WebPages};
 use localsend::http::state::ClientInfo;
@@ -147,7 +147,11 @@ static RUNNING_SERVER: Mutex<Option<Arc<ServerInstance>>> = Mutex::const_new(Non
 
 /// The TCP port of the running server, if any (for diagnostics).
 pub(crate) async fn running_server_port() -> Option<u16> {
-    RUNNING_SERVER.lock().await.as_ref().map(|s| s.handle.port())
+    RUNNING_SERVER
+        .lock()
+        .await
+        .as_ref()
+        .map(|s| s.handle.port())
 }
 
 /// Configuration for the pages served to browsers. Always part of the server

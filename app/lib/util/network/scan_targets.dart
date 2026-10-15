@@ -16,6 +16,10 @@ const maxExtraSubnetHosts = 4096;
 /// At most this many entered `peerIps` are probed per scan.
 const maxPeerIpsPerScan = 32;
 
+/// Maximum IPs sent to `probePeers` in one scan (entered peer IPs plus hosts
+/// of /25-/32 extra subnets). Matches `MAX_PROBE_TARGETS` in Rust.
+const maxDirectProbeTargets = 96;
+
 /// A validated `extraSubnets` entry.
 class ExtraSubnet {
   /// An address inside each /24 to scan (the scan covers the whole /24).
@@ -151,7 +155,8 @@ ExtraScanPlan buildExtraScanPlan({
   for (final (i, entry) in extraSubnets.indexed) {
     final parsed = i < maxExtraSubnetEntries ? parseExtraSubnet(entry) : null;
     final cost = parsed == null ? 0 : parsed.subnetSeeds.length * 256 + parsed.hosts.length;
-    if (parsed == null || cost > budget) {
+    final newHosts = parsed?.hosts.where((h) => !hosts.contains(h)).length ?? 0;
+    if (parsed == null || cost > budget || hosts.length + newHosts > maxDirectProbeTargets) {
       invalid.add(entry);
       continue;
     }

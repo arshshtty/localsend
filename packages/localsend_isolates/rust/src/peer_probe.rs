@@ -14,6 +14,7 @@
 use crate::api::diagnostics::{PeerProbeResult, PeerSource};
 use localsend::http::client::LsHttpClientV2;
 use localsend::model::discovery::ProtocolType;
+use std::collections::HashSet;
 use std::future::Future;
 use std::net::IpAddr;
 use std::pin::Pin;
@@ -112,9 +113,9 @@ pub(crate) const MAX_CONCURRENT_PROBES: usize = 16;
 /// At most this many Tailscale CLI peers are probed per scan.
 pub(crate) const MAX_TAILNET_PEERS: usize = 64;
 
-/// At most this many explicit targets (entered peer IPs plus small extra
-/// subnets, capped further on the Dart side) are probed per call.
-pub(crate) const MAX_PROBE_TARGETS: usize = 4096 + 32;
+/// Maximum explicit targets per `probe_ips` call: 32 entered peer IPs plus
+/// 64 hosts of small extra subnets. Matches `maxDirectProbeTargets` in Dart.
+pub(crate) const MAX_PROBE_TARGETS: usize = 32 + 64;
 
 /// Probes one peer: reachable when a LocalSend `info` endpoint answers.
 async fn probe_one(
@@ -231,18 +232,21 @@ pub(crate) async fn probe_ips(
     port: u16,
     timeout_ms: u32,
 ) -> Vec<PeerProbeResult> {
+    let mut seen = HashSet::new();
     let mut targets: Vec<(String, PeerSource)> = Vec::new();
     for ip in peer_ips {
+        if targets.len() >= MAX_PROBE_TARGETS {
+            break;
+        }
         let ip = ip.trim().to_string();
         if ip.parse::<IpAddr>().is_err() {
             tracing::debug!("Ignoring invalid peer IP {ip:?}");
             continue;
         }
-        if !targets.iter().any(|(t, _)| *t == ip) {
+        if seen.insert(ip.clone()) {
             targets.push((ip, PeerSource::UserEntered));
         }
     }
-    targets.truncate(MAX_PROBE_TARGETS);
     probe_targets(targets, port, timeout_ms).await
 }
 

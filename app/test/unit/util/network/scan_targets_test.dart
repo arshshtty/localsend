@@ -105,11 +105,11 @@ void main() {
       expect(plan.invalidSubnets, many.sublist(16));
 
       // 16 entries of at most a /24 stay within the 4096-host budget.
-      final mixed = [for (var i = 0; i < 15; i++) '10.$i.0.0/24', '10.98.0.128/25'];
+      final mixed = [for (var i = 0; i < 15; i++) '10.$i.0.0/24', '10.98.0.128/26'];
       final plan2 = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: mixed, peerIps: []);
       expect(plan2.invalidSubnets, isEmpty);
       expect(plan2.subnetSeeds, hasLength(15));
-      expect(plan2.peerIps, hasLength(126));
+      expect(plan2.peerIps, hasLength(62));
     });
 
     test('acceptance (no CLI): an IP entered once is probed on every later scan', () {
@@ -117,6 +117,16 @@ void main() {
         final plan = buildExtraScanPlan(localIps: ['192.168.1.2'], bindInterfaces: [], extraSubnets: [], peerIps: ['100.64.0.9']);
         expect(plan.peerIps, ['100.64.0.9']);
       }
+    });
+    test('direct probe targets are capped at maxDirectProbeTargets', () {
+      final plan = buildExtraScanPlan(
+        localIps: const [],
+        bindInterfaces: const [],
+        extraSubnets: const ['10.1.0.0/25'],
+        peerIps: const [],
+      );
+      expect(plan.peerIps, isEmpty);
+      expect(plan.invalidSubnets, ['10.1.0.0/25']);
     });
   });
 }
