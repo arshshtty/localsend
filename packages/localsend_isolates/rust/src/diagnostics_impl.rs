@@ -295,18 +295,61 @@ fn pid_hint(port: u16, tcp: bool) -> Option<String> {
     } else {
         format!("-iUDP:{port}")
     };
-    let mut args = vec!["-nP", "-Fpc", filter.as_str()];
+    // -b: avoid kernel functions that can block; -w: suppress warnings.
+    let mut args = vec!["-b", "-w", "-nP", "-Fpc", filter.as_str()];
     if tcp {
         args.push("-sTCP:LISTEN");
     }
-    let out = std::process::Command::new("lsof")
-        .args(&args)
-        .output()
-        .ok()?;
-    let text = String::from_utf8_lossy(&out.stdout);
+    let program = if std::path::Path::new("/usr/sbin/lsof").exists() {
+        "/usr/sbin/lsof"
+    } else {
+        "lsof"
+    };
+    let text = run_with_timeout(program, &args, LSOF_TIMEOUT)?;
     let pid = text.lines().find_map(|l| l.strip_prefix('p'))?;
     let name = text.lines().find_map(|l| l.strip_prefix('c')).unwrap_or("");
     Some(format!("{pid} ({name})"))
+}
+
+/// How long `lsof` may run before it is killed.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const LSOF_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Spawns `program`, waits at most `timeout`, and kills it if it is still
+/// running. Returns its stdout on time, `None` on spawn failure or timeout.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn run_with_timeout(program: &str, args: &[&str], timeout: std::time::Duration) -> Option<String> {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+    // Drain stdout on a thread so a chatty child cannot block on a full pipe.
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut buf = String::new();
+        let _ = stdout.read_to_string(&mut buf);
+        buf
+    });
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => break,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    reader.join().ok()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
@@ -617,5 +660,24 @@ mod tests {
         assert!(v2.addresses.is_empty());
         assert_eq!(v2.join_v4, JoinResult::NotAttempted);
         assert!(by("lo").loopback);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_with_timeout_kills_hung_child() {
+        let started = std::time::Instant::now();
+        assert_eq!(
+            run_with_timeout("sleep", &["5"], std::time::Duration::from_millis(200)),
+            None
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
+        assert_eq!(
+            run_with_timeout("echo", &["p42"], LSOF_TIMEOUT).as_deref(),
+            Some("p42\n")
+        );
+        assert_eq!(
+            run_with_timeout("/nonexistent/lsof", &[], LSOF_TIMEOUT),
+            None
+        );
     }
 }
