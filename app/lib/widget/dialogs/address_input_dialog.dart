@@ -122,8 +122,8 @@ class _AddressInputDialogState extends State<AddressInputDialog> with Refena {
     if (foundDevice != null) {
       ref.redux(lastDevicesProvider).dispatch(AddLastDeviceAction(foundDevice!));
       final foundIp = foundDevice!.ip;
-      if ((_mode == _InputMode.ip || candidate != null) && foundIp != null && !ref.read(settingsProvider).peerIps.contains(foundIp)) {
-        // Opt-in only: remembered addresses are checked during later scans.
+      if (candidate == null && _mode == _InputMode.ip && foundIp != null && !ref.read(settingsProvider).peerIps.contains(foundIp)) {
+        // Typed addresses only, opt-in: remembered addresses are checked during later scans.
         final remember = await showDialog<bool>(
           context: context,
           builder: (_) => RememberPeerDialog(ip: foundIp),
