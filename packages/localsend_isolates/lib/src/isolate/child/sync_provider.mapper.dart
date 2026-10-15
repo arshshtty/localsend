@@ -52,6 +52,11 @@ class SyncStateMapper extends ClassMapperBase<SyncState> {
     'networkBlacklist',
     _$networkBlacklist,
   );
+  static List<String> _$bindInterfaces(SyncState v) => v.bindInterfaces;
+  static const Field<SyncState, List<String>> _f$bindInterfaces = Field(
+    'bindInterfaces',
+    _$bindInterfaces,
+  );
   static ProtocolType _$protocol(SyncState v) => v.protocol;
   static const Field<SyncState, ProtocolType> _f$protocol = Field(
     'protocol',
@@ -87,6 +92,7 @@ class SyncStateMapper extends ClassMapperBase<SyncState> {
     #port: _f$port,
     #networkWhitelist: _f$networkWhitelist,
     #networkBlacklist: _f$networkBlacklist,
+    #bindInterfaces: _f$bindInterfaces,
     #protocol: _f$protocol,
     #multicastGroup: _f$multicastGroup,
     #discoveryTimeout: _f$discoveryTimeout,
@@ -103,6 +109,7 @@ class SyncStateMapper extends ClassMapperBase<SyncState> {
       port: data.dec(_f$port),
       networkWhitelist: data.dec(_f$networkWhitelist),
       networkBlacklist: data.dec(_f$networkBlacklist),
+      bindInterfaces: data.dec(_f$bindInterfaces),
       protocol: data.dec(_f$protocol),
       multicastGroup: data.dec(_f$multicastGroup),
       discoveryTimeout: data.dec(_f$discoveryTimeout),
@@ -180,6 +187,8 @@ abstract class SyncStateCopyWith<$R, $In extends SyncState, $Out>
   get networkWhitelist;
   ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>?
   get networkBlacklist;
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
+  get bindInterfaces;
   $R call({
     Object? rootIsolateToken,
     StoredSecurityContext? securityContext,
@@ -188,6 +197,7 @@ abstract class SyncStateCopyWith<$R, $In extends SyncState, $Out>
     int? port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    List<String>? bindInterfaces,
     ProtocolType? protocol,
     String? multicastGroup,
     int? discoveryTimeout,
@@ -232,6 +242,13 @@ class _SyncStateCopyWithImpl<$R, $Out>
         )
       : null;
   @override
+  ListCopyWith<$R, String, ObjectCopyWith<$R, String, String>>
+  get bindInterfaces => ListCopyWith(
+    $value.bindInterfaces,
+    (v, t) => ObjectCopyWith(v, $identity, t),
+    (v) => call(bindInterfaces: v),
+  );
+  @override
   $R call({
     Object? rootIsolateToken,
     StoredSecurityContext? securityContext,
@@ -240,6 +257,7 @@ class _SyncStateCopyWithImpl<$R, $Out>
     int? port,
     Object? networkWhitelist = $none,
     Object? networkBlacklist = $none,
+    List<String>? bindInterfaces,
     ProtocolType? protocol,
     String? multicastGroup,
     int? discoveryTimeout,
@@ -254,6 +272,7 @@ class _SyncStateCopyWithImpl<$R, $Out>
       if (port != null) #port: port,
       if (networkWhitelist != $none) #networkWhitelist: networkWhitelist,
       if (networkBlacklist != $none) #networkBlacklist: networkBlacklist,
+      if (bindInterfaces != null) #bindInterfaces: bindInterfaces,
       if (protocol != null) #protocol: protocol,
       if (multicastGroup != null) #multicastGroup: multicastGroup,
       if (discoveryTimeout != null) #discoveryTimeout: discoveryTimeout,
@@ -270,6 +289,7 @@ class _SyncStateCopyWithImpl<$R, $Out>
     port: data.get(#port, or: $value.port),
     networkWhitelist: data.get(#networkWhitelist, or: $value.networkWhitelist),
     networkBlacklist: data.get(#networkBlacklist, or: $value.networkBlacklist),
+    bindInterfaces: data.get(#bindInterfaces, or: $value.bindInterfaces),
     protocol: data.get(#protocol, or: $value.protocol),
     multicastGroup: data.get(#multicastGroup, or: $value.multicastGroup),
     discoveryTimeout: data.get(#discoveryTimeout, or: $value.discoveryTimeout),

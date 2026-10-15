@@ -174,6 +174,7 @@ pub async fn start_discovery(
     port: u16,
     network_whitelist: Option<Vec<String>>,
     network_blacklist: Option<Vec<String>>,
+    bind_interfaces: Vec<String>,
     alias: String,
     version: String,
     device_model: Option<String>,
@@ -208,8 +209,9 @@ pub async fn start_discovery(
             interface_filter: InterfaceFilter {
                 whitelist: network_whitelist,
                 blacklist: network_blacklist,
-                // Wired to the `bindInterfaces` setting in Troubleshooter 4/4.
-                interface_names: None,
+                interface_names: crate::diagnostics_impl::resolve_bind_interfaces_now(
+                    bind_interfaces,
+                ),
             },
             device: MulticastDevice {
                 alias,

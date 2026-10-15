@@ -206,6 +206,42 @@ pub(crate) fn list_interfaces(source: &dyn InterfaceSource) -> Vec<InterfaceDiag
     }
 }
 
+/// Resolves the `bindInterfaces` setting to `InterfaceFilter::interface_names`.
+///
+/// Empty means all interfaces (`None`). Names that don't exist (e.g. a VPN
+/// that is down) are dropped; when none of them exists, falls back to all
+/// interfaces and logs it, so a stale setting can't silently disable LocalSend.
+pub(crate) fn resolve_bind_interfaces(
+    names: Vec<String>,
+    existing: &[String],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let present: Vec<String> = names
+        .iter()
+        .filter(|n| existing.contains(n))
+        .cloned()
+        .collect();
+    if present.is_empty() {
+        tracing::warn!("None of the selected interfaces {names:?} exists; using all interfaces");
+        return None;
+    }
+    if present.len() < names.len() {
+        tracing::info!("Selected interfaces {names:?}; only {present:?} exist");
+    }
+    Some(present)
+}
+
+/// [resolve_bind_interfaces] against the current system interfaces.
+pub(crate) fn resolve_bind_interfaces_now(names: Vec<String>) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let existing = localsend::util::interface::interface_names().unwrap_or_default();
+    resolve_bind_interfaces(names, &existing)
+}
+
 /// TCP bind probe on the wildcard address, like the HTTP server does.
 pub(crate) fn probe_tcp(port: u16) -> PortStatus {
     match std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) {
@@ -353,10 +389,13 @@ fn run_with_timeout(program: &str, args: &[&str], timeout: std::time::Duration) 
         .ok()?;
     // Drain stdout on a thread so a chatty child cannot block on a full pipe.
     let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
+    // The result comes back over a channel so the wait is bounded: a
+    // grandchild that inherited stdout could keep the pipe open forever.
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let mut buf = String::new();
         let _ = stdout.read_to_string(&mut buf);
-        buf
+        let _ = tx.send(buf);
     });
     let deadline = std::time::Instant::now() + timeout;
     loop {
@@ -372,8 +411,12 @@ fn run_with_timeout(program: &str, args: &[&str], timeout: std::time::Duration) 
             }
         }
     }
-    reader.join().ok()
+    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+    rx.recv_timeout(remaining.max(READER_GRACE)).ok()
 }
+
+/// Extra time to collect stdout after the child exited.
+const READER_GRACE: std::time::Duration = std::time::Duration::from_millis(200);
 
 #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos")))]
 fn pid_hint(_port: u16, _tcp: bool) -> Option<String> {
@@ -502,6 +545,20 @@ mod tests {
         assert_eq!(by("v6only").join_v4, JoinResult::NotAttempted);
         assert_eq!(by("v6only").join_v6, JoinResult::Ok);
         assert_eq!(source.v4_calls.get(), 2);
+    }
+
+    #[test]
+    fn bind_interfaces_resolve_with_fallback() {
+        let existing = vec!["eth0".to_string(), "tailscale0".to_string()];
+        assert_eq!(resolve_bind_interfaces(vec![], &existing), None);
+        assert_eq!(
+            resolve_bind_interfaces(vec!["tailscale0".into(), "gone0".into()], &existing),
+            Some(vec!["tailscale0".to_string()])
+        );
+        assert_eq!(
+            resolve_bind_interfaces(vec!["gone0".into()], &existing),
+            None
+        );
     }
 
     #[test]
@@ -717,6 +774,24 @@ mod tests {
         assert_eq!(
             run_with_timeout("/nonexistent/lsof", &[], LSOF_TIMEOUT),
             None
+        );
+    }
+
+    /// A background grandchild keeps stdout open after the child exits; the
+    /// read must still return within the deadline.
+    #[cfg(unix)]
+    #[test]
+    fn run_with_timeout_bounds_reader_when_grandchild_holds_stdout() {
+        let started = std::time::Instant::now();
+        let _ = run_with_timeout(
+            "sh",
+            &["-c", "sleep 5 & echo p1"],
+            std::time::Duration::from_millis(300),
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "{:?}",
+            started.elapsed()
         );
     }
 }

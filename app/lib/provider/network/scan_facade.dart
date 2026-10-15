@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:localsend_app/provider/favorites_provider.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
 import 'package:localsend_app/provider/network/nearby_devices_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/util/native/channel/android_channel.dart';
+import 'package:localsend_app/util/native/platform_check.dart';
 import 'package:localsend_app/util/network/scan_targets.dart';
 import 'package:localsend_isolates/rust/api/diagnostics.dart' as rust_diag;
 import 'package:logging/logging.dart';
@@ -105,6 +108,17 @@ class StartSmartScan extends AsyncGlobalAction {
 
   @override
   Future<void> reduce() async {
+    if (checkPlatform([TargetPlatform.android])) {
+      await withMulticastLockAndroid(_scan);
+    } else {
+      await _scan();
+    }
+  }
+
+  Future<void> _scan() async {
+    // Advertised addresses and scanned subnets follow `bindInterfaces`, so
+    // they are recomputed on every scan instead of once at startup.
+    await ref.redux(localIpProvider).dispatchAsync(FetchLocalIpAction());
     final favorites = ref.read(favoritesProvider);
     final settings = ref.read(settingsProvider);
     final networkInterfaces = ref.read(localIpProvider).localIps.take(maxInterfaces).toList();

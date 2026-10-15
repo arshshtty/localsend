@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:localsend_app/gen/strings.g.dart';
@@ -15,14 +16,20 @@ import 'package:window_manager/window_manager.dart';
 
 final _listEq = const ListEquality().equals;
 
+/// Delay before applying a `bindInterfaces` change (discovery restart).
+const bindInterfacesDebounce = Duration(milliseconds: 500);
+Timer? _discoveryRestartDebounce;
+
 final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
   (ref) {
     return SettingsService(ref.read(persistenceProvider));
   },
   onChanged: (_, next, ref) {
     final syncState = ref.read(parentIsolateProvider).syncState;
+    final bindInterfacesChanged = !_listEq(syncState.bindInterfaces, next.bindInterfaces);
     if (_listEq(syncState.networkWhitelist, next.networkWhitelist) &&
         _listEq(syncState.networkBlacklist, next.networkBlacklist) &&
+        !bindInterfacesChanged &&
         syncState.multicastGroup == next.multicastGroup &&
         syncState.discoveryTimeout == next.discoveryTimeout) {
       return;
@@ -34,10 +41,21 @@ final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
           IsolateSyncSettingsAction(
             networkWhitelist: next.networkWhitelist,
             networkBlacklist: next.networkBlacklist,
+            bindInterfaces: next.bindInterfaces,
             multicastGroup: next.multicastGroup,
             discoveryTimeout: next.discoveryTimeout,
           ),
         );
+
+    if (bindInterfacesChanged) {
+      // Multicast joins/announces are scoped when discovery starts, so restart
+      // it, debounced so rapid toggles cause a single restart. The HTTP server
+      // listens on all interfaces and is never restarted for this.
+      _discoveryRestartDebounce?.cancel();
+      _discoveryRestartDebounce = Timer(bindInterfacesDebounce, () {
+        ref.redux(parentIsolateProvider).dispatch(IsolateDiscoveryRestartAction());
+      });
+    }
   },
 );
 

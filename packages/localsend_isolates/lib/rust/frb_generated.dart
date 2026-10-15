@@ -301,6 +301,7 @@ abstract class RustLibApi extends BaseApi {
     required int port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    required List<String> bindInterfaces,
     required String alias,
     required String version,
     String? deviceModel,
@@ -2184,6 +2185,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    required List<String> bindInterfaces,
     required String alias,
     required String version,
     String? deviceModel,
@@ -2203,6 +2205,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_16(port, serializer);
           sse_encode_opt_list_String(networkWhitelist, serializer);
           sse_encode_opt_list_String(networkBlacklist, serializer);
+          sse_encode_list_String(bindInterfaces, serializer);
           sse_encode_String(alias, serializer);
           sse_encode_String(version, serializer);
           sse_encode_opt_String(deviceModel, serializer);
@@ -2225,6 +2228,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           port,
           networkWhitelist,
           networkBlacklist,
+          bindInterfaces,
           alias,
           version,
           deviceModel,
@@ -2248,6 +2252,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       'port',
       'networkWhitelist',
       'networkBlacklist',
+      'bindInterfaces',
       'alias',
       'version',
       'deviceModel',

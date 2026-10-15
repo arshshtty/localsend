@@ -183,6 +183,17 @@ pub(crate) fn local_interfaces(filter: &InterfaceFilter) -> std::io::Result<Loca
     Ok(result)
 }
 
+/// Names of the local interfaces (for validating saved interface names).
+pub fn interface_names() -> std::io::Result<Vec<String>> {
+    let mut names: Vec<String> = if_addrs::get_if_addrs()?
+        .into_iter()
+        .map(|i| i.name)
+        .collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
 /// The IPv4 addresses of all usable (non-loopback, unfiltered) local
 /// interfaces, e.g. the subnets to fall back-scan when multicast is silent.
 pub fn local_interface_addresses(filter: &InterfaceFilter) -> std::io::Result<Vec<Ipv4Addr>> {
@@ -309,7 +320,8 @@ mod tests {
     }
 
     /// Linux only: in a fresh user + network namespace with two veth links,
-    /// `interface_names` restricts the interfaces multicast binds/joins on.
+    /// `interface_names` restricts the interfaces multicast binds/joins on (and
+    /// the advertised interface list), while the HTTP server still listens on all.
     /// Skips (passes) when unprivileged netns/veth are unavailable.
     #[cfg(target_os = "linux")]
     #[test]
@@ -326,7 +338,7 @@ mod tests {
         }
         let exe = std::env::current_exe().unwrap();
         let script = format!(
-            "set -e; ip link add v0 type veth peer name v1; \
+            "set -e; ip link set lo up; ip link add v0 type veth peer name v1; \
              ip addr add 10.78.0.1/24 dev v0; ip addr add 10.78.1.1/24 dev v1; \
              ip link set v0 up; ip link set v1 up; \
              LS_NETNS_INNER=1 '{}' --exact util::interface::tests::netns_inner_interface_names --ignored",
@@ -366,17 +378,56 @@ mod tests {
             }]
         );
         // The multicast sockets follow the same filter.
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let sockets = rt
-            .block_on(async {
-                crate::multicast::socket::bind_multicast_sockets(
-                    crate::multicast::DEFAULT_MULTICAST_GROUP,
-                    None,
-                    0,
-                    &only_v1,
-                )
-            });
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let sockets = rt.block_on(async {
+            crate::multicast::socket::bind_multicast_sockets(
+                crate::multicast::DEFAULT_MULTICAST_GROUP,
+                None,
+                0,
+                &only_v1,
+            )
+        });
         let sockets = sockets.expect("bind on v1");
         assert_eq!(sockets.len(), 1);
+
+        // The HTTP server is not scoped: it listens on 0.0.0.0/[::] and
+        // accepts on every interface, including ones not in the filter.
+        rt.block_on(async {
+            let (_stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+            let handle = crate::http::server::start_with_port(
+                0,
+                None,
+                crate::http::state::ClientInfo {
+                    alias: "netns".into(),
+                    version: "2.1".into(),
+                    device_model: None,
+                    device_type: None,
+                    token: "t".into(),
+                },
+                None,
+                None,
+                Default::default(),
+                stop_rx,
+            )
+            .await
+            .expect("server starts");
+            let port = handle.port();
+            let connect = |ip: &'static str| async move {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    tokio::net::TcpStream::connect((ip, port)),
+                )
+                .await
+                .is_ok_and(|r| r.is_ok())
+            };
+            assert!(connect("10.78.1.1").await, "v1 must accept");
+            assert!(
+                connect("10.78.0.1").await,
+                "v0 must accept too (server is not filtered)"
+            );
+        });
     }
 }
