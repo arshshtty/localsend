@@ -367,6 +367,7 @@ async fn test_discovery_works_without_multicast() {
             interface_filter: InterfaceFilter {
                 whitelist: Some(vec!["203.0.113.1".to_string()]),
                 blacklist: None,
+                interface_names: None,
             },
             device: MulticastDevice {
                 alias: "NoMulticast".to_string(),

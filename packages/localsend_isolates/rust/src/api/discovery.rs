@@ -208,6 +208,8 @@ pub async fn start_discovery(
             interface_filter: InterfaceFilter {
                 whitelist: network_whitelist,
                 blacklist: network_blacklist,
+                // Wired to the `bindInterfaces` setting in Troubleshooter 4/4.
+                interface_names: None,
             },
             device: MulticastDevice {
                 alias,

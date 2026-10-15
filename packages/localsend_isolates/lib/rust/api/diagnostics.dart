@@ -21,9 +21,15 @@ part 'diagnostics.freezed.dart';
 /// bind probe is skipped and the status is `HeldByThisApp`.
 Future<Diagnostics> runDiagnostics({required int port}) => RustLib.instance.api.crateApiDiagnosticsRunDiagnostics(port: port);
 
-/// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
+/// Probes LocalSend peers on `port`, concurrently, each within `timeout_ms`.
 ///
-/// STUB: returns an empty list. Implemented in a later PR.
+/// - Desktop with the `tailscale` CLI: online peers from
+///   `tailscale status --json` (source `TailscaleCli`). A missing or failing
+///   CLI quietly contributes nothing.
+/// - Always: the user-entered `peer_ips` (source `UserEntered`); invalid IPs
+///   are skipped, duplicates of CLI peers are probed once.
+///
+/// A peer is `reachable` when its LocalSend `info` endpoint answers (HTTPS or HTTP).
 Future<List<PeerProbeResult>> probePeers({required List<String> peerIps, required int port, required int timeoutMs}) =>
     RustLib.instance.api.crateApiDiagnosticsProbePeers(peerIps: peerIps, port: port, timeoutMs: timeoutMs);
 

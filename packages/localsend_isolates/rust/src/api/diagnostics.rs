@@ -2,7 +2,7 @@
 //!
 //! The types in this module are the Dart-facing contract for the network
 //! troubleshooter screen. `run_diagnostics` is real (Troubleshooter 2/4);
-//! `probe_peers` is still a stub until 3/4.
+//! `probe_peers` is real since 3/4.
 
 /// Result of trying to join the LocalSend multicast group on one interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,16 +122,27 @@ pub async fn run_diagnostics(port: u16) -> Diagnostics {
     })
 }
 
-/// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
+/// Probes LocalSend peers on `port`, concurrently, each within `timeout_ms`.
 ///
-/// STUB: returns an empty list. Implemented in a later PR.
+/// - Desktop with the `tailscale` CLI: online peers from
+///   `tailscale status --json` (source `TailscaleCli`). A missing or failing
+///   CLI quietly contributes nothing.
+/// - Always: the user-entered `peer_ips` (source `UserEntered`); invalid IPs
+///   are skipped, duplicates of CLI peers are probed once.
+///
+/// A peer is `reachable` when its LocalSend `info` endpoint answers (HTTPS or HTTP).
 pub async fn probe_peers(
     peer_ips: Vec<String>,
     port: u16,
     timeout_ms: u32,
 ) -> Vec<PeerProbeResult> {
-    let _ = (peer_ips, port, timeout_ms);
-    Vec::new()
+    crate::peer_probe::probe_peers_with(
+        &crate::peer_probe::SystemTailscale,
+        peer_ips,
+        port,
+        timeout_ms,
+    )
+    .await
 }
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).
@@ -154,7 +165,6 @@ mod tests {
     async fn real_diagnostics_are_not_stub() {
         let d = run_diagnostics(0).await;
         assert!(!d.is_stub);
-        assert!(probe_peers(vec![], 53317, 500).await.is_empty());
         assert_eq!(
             describe_start_error(StartError::PortInUse { port: 53317 }),
             "Port 53317 is already in use"
