@@ -3,12 +3,15 @@ import 'package:localsend_app/util/subnet_validator.dart';
 
 void main() {
   test('validateSubnet', () {
-    expect(validateSubnet('192.168.5.0/24'), isNull);
+    expect(validateSubnet('192.168.5.0/26'), isNull);
     expect(validateSubnet('192.168.5.7/32'), isNull);
-    expect(validateSubnet('192.168.5.128/25'), isNull);
-    expect(validateSubnet('192.168.5.*'), isNull);
+    expect(validateSubnet('192.168.5.192/26'), isNull);
+    // Over /26 (more than 64 addresses) is rejected to match the 96-target scan cap.
+    expect(validateSubnet('192.168.5.0/24'), contains('/26'));
+    expect(validateSubnet('192.168.5.128/25'), contains('192.168.5.128/26'));
+    expect(validateSubnet('192.168.5.*'), contains('192.168.5.0/26'));
     expect(validateSubnet('10.0.0.0/8'), contains('too large'));
-    expect(validateSubnet('192.168.5.7/24'), contains('192.168.5.0/24'));
+    expect(validateSubnet('192.168.5.7/26'), contains('192.168.5.0/26'));
     expect(validateSubnet('192.168.05.0/24'), isNotNull);
     expect(validateSubnet('010.1.1.*'), isNotNull);
     expect(validateSubnet('192.168.*.*'), isNotNull);
