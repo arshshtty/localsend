@@ -301,6 +301,7 @@ abstract class RustLibApi extends BaseApi {
     required int port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    required List<String> bindInterfaces,
     required String alias,
     required String version,
     String? deviceModel,
@@ -325,6 +326,7 @@ abstract class RustLibApi extends BaseApi {
     required bool verifyChecksums,
     required WebParams web,
     String? showToken,
+    required List<String> bindInterfaces,
   });
 
   Future<void> crateApiCryptoVerifyCert({required String cert, required String publicKey});
@@ -2184,6 +2186,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required int port,
     List<String>? networkWhitelist,
     List<String>? networkBlacklist,
+    required List<String> bindInterfaces,
     required String alias,
     required String version,
     String? deviceModel,
@@ -2203,6 +2206,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_u_16(port, serializer);
           sse_encode_opt_list_String(networkWhitelist, serializer);
           sse_encode_opt_list_String(networkBlacklist, serializer);
+          sse_encode_list_String(bindInterfaces, serializer);
           sse_encode_String(alias, serializer);
           sse_encode_String(version, serializer);
           sse_encode_opt_String(deviceModel, serializer);
@@ -2225,6 +2229,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           port,
           networkWhitelist,
           networkBlacklist,
+          bindInterfaces,
           alias,
           version,
           deviceModel,
@@ -2248,6 +2253,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       'port',
       'networkWhitelist',
       'networkBlacklist',
+      'bindInterfaces',
       'alias',
       'version',
       'deviceModel',
@@ -2274,6 +2280,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required bool verifyChecksums,
     required WebParams web,
     String? showToken,
+    required List<String> bindInterfaces,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -2290,6 +2297,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_bool(verifyChecksums, serializer);
           sse_encode_box_autoadd_web_params(web, serializer);
           sse_encode_opt_String(showToken, serializer);
+          sse_encode_list_String(bindInterfaces, serializer);
           pdeCallFfi(generalizedFrbRustBinding, serializer, funcId: 63, port: port_);
         },
         codec: SseCodec(
@@ -2297,7 +2305,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_start_error,
         ),
         constMeta: kCrateApiServerStartServerConstMeta,
-        argValues: [port, tls, alias, version, deviceModel, deviceType, fingerprint, pin, verifyChecksums, web, showToken],
+        argValues: [port, tls, alias, version, deviceModel, deviceType, fingerprint, pin, verifyChecksums, web, showToken, bindInterfaces],
         apiImpl: this,
       ),
     );
@@ -2305,7 +2313,20 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateApiServerStartServerConstMeta => const TaskConstMeta(
     debugName: 'start_server',
-    argNames: ['port', 'tls', 'alias', 'version', 'deviceModel', 'deviceType', 'fingerprint', 'pin', 'verifyChecksums', 'web', 'showToken'],
+    argNames: [
+      'port',
+      'tls',
+      'alias',
+      'version',
+      'deviceModel',
+      'deviceType',
+      'fingerprint',
+      'pin',
+      'verifyChecksums',
+      'web',
+      'showToken',
+      'bindInterfaces',
+    ],
   );
 
   @override

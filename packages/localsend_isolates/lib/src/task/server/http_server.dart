@@ -25,6 +25,7 @@ class HttpServerService {
     required bool verifyChecksums,
     required WebParams web,
     required String? showToken,
+    List<String> bindInterfaces = const [],
   }) async {
     if (_server != null) {
       throw StateError('Server already running');
@@ -42,6 +43,7 @@ class HttpServerService {
       verifyChecksums: verifyChecksums,
       web: web,
       showToken: showToken,
+      bindInterfaces: bindInterfaces,
     );
     _server = server;
     return server.listen();

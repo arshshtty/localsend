@@ -17,6 +17,9 @@ class SyncState with SyncStateMappable {
   final int port;
   final List<String>? networkWhitelist;
   final List<String>? networkBlacklist;
+
+  /// Interface names to bind/join on; empty = all interfaces.
+  final List<String> bindInterfaces;
   final ProtocolType protocol;
   final String multicastGroup;
   final int discoveryTimeout;
@@ -32,6 +35,7 @@ class SyncState with SyncStateMappable {
     required this.port,
     required this.networkWhitelist,
     required this.networkBlacklist,
+    required this.bindInterfaces,
     required this.protocol,
     required this.multicastGroup,
     required this.discoveryTimeout,
@@ -41,7 +45,7 @@ class SyncState with SyncStateMappable {
 
   @override
   String toString() {
-    return 'SyncState(securityContext: <SecurityContext>, deviceInfo: $deviceInfo, alias: $alias, port: $port, networkWhitelist: $networkWhitelist, networkBlacklist: $networkBlacklist, protocol: $protocol, multicastGroup: $multicastGroup, discoveryTimeout: $discoveryTimeout, serverRunning: $serverRunning, download: $download)';
+    return 'SyncState(securityContext: <SecurityContext>, deviceInfo: $deviceInfo, alias: $alias, port: $port, networkWhitelist: $networkWhitelist, networkBlacklist: $networkBlacklist, bindInterfaces: $bindInterfaces, protocol: $protocol, multicastGroup: $multicastGroup, discoveryTimeout: $discoveryTimeout, serverRunning: $serverRunning, download: $download)';
   }
 }
 

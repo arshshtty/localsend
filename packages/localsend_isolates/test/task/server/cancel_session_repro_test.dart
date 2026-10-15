@@ -71,6 +71,7 @@ void main() {
         pages: WebPages(),
       ),
       showToken: null,
+      bindInterfaces: const [],
     );
 
     _ReceiveSession? session;

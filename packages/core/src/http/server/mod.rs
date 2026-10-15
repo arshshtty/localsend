@@ -239,26 +239,83 @@ pub async fn start_with_port(
     web_config: WebConfig,
     stop_rx: oneshot::Receiver<()>,
 ) -> anyhow::Result<ServerHandle> {
+    start_with_port_filtered(
+        port,
+        tls_config,
+        info,
+        internal_config,
+        v2_config,
+        web_config,
+        stop_rx,
+        &InterfaceFilter::default(),
+    )
+    .await
+}
+
+/// Like [start_with_port], but when `filter.interface_names` is non-empty the
+/// server only listens on the addresses of those interfaces (IPv4 and
+/// non-link-local IPv6) instead of the wildcard addresses. Falls back to the
+/// wildcard addresses when none of the named interfaces has an address.
+#[allow(clippy::too_many_arguments)]
+pub async fn start_with_port_filtered(
+    port: u16,
+    tls_config: Option<TlsConfig>,
+    info: ClientInfo,
+    internal_config: Option<InternalConfig>,
+    v2_config: Option<ServerConfigV2>,
+    web_config: WebConfig,
+    stop_rx: oneshot::Receiver<()>,
+    filter: &InterfaceFilter,
+) -> anyhow::Result<ServerHandle> {
     // Installed before returning, so that a client built right after (which
     // skips the install when a provider exists) does not race the accept task.
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let ipv4_socket_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
     let info = Arc::new(Mutex::new(info));
     let state = AppState::new(info.clone(), internal_config, v2_config, web_config);
 
-    let ipv4_listener = tokio::net::TcpListener::bind(ipv4_socket_addr).await?;
-    // With port 0, the IPv6 listener must reuse the port the IPv4 listener got.
-    let bound_port = ipv4_listener.local_addr()?.port();
-    let ipv6_socket_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), bound_port);
-    let ipv6_listener = match bind_ipv6_only(ipv6_socket_addr) {
-        Ok(listener) => Some(listener),
-        Err(err) => {
-            tracing::warn!("Failed to start server on {}: {err:#}", ipv6_socket_addr);
-            None
+    let bind_addresses = match &filter.interface_names {
+        Some(names) if !names.is_empty() => {
+            let addresses = crate::util::interface::interface_bind_addresses(filter)?;
+            if addresses.is_empty() {
+                tracing::warn!("None of the interfaces {names:?} has an address; listening on all interfaces");
+            }
+            addresses
         }
+        _ => Vec::new(),
     };
-    let ipv6_bound = ipv6_listener.is_some();
+
+    // The primary listener ends the server when it fails; the others only log.
+    let (ipv4_socket_addr, ipv4_listener, extra_listeners, ipv6_bound) = if bind_addresses.is_empty() {
+        let ipv4_socket_addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), port);
+        let ipv4_listener = tokio::net::TcpListener::bind(ipv4_socket_addr).await?;
+        // With port 0, the IPv6 listener must reuse the port the IPv4 listener got.
+        let bound_port = ipv4_listener.local_addr()?.port();
+        let ipv6_socket_addr = SocketAddr::new(Ipv6Addr::UNSPECIFIED.into(), bound_port);
+        let mut extra = Vec::new();
+        match bind_ipv6_only(ipv6_socket_addr) {
+            Ok(listener) => extra.push((ipv6_socket_addr, listener)),
+            Err(err) => tracing::warn!("Failed to start server on {}: {err:#}", ipv6_socket_addr),
+        }
+        let ipv6_bound = !extra.is_empty();
+        (ipv4_socket_addr, ipv4_listener, extra, ipv6_bound)
+    } else {
+        let first = SocketAddr::new(bind_addresses[0], port);
+        let primary = bind_listener(first).await?;
+        let bound_port = primary.local_addr()?.port();
+        let mut extra = Vec::new();
+        for address in &bind_addresses[1..] {
+            let socket_addr = SocketAddr::new(*address, bound_port);
+            match bind_listener(socket_addr).await {
+                Ok(listener) => extra.push((socket_addr, listener)),
+                Err(err) => tracing::warn!("Failed to start server on {}: {err:#}", socket_addr),
+            }
+        }
+        let ipv6_bound = first.is_ipv6() || extra.iter().any(|(a, _)| a.is_ipv6());
+        tracing::info!("Server listens only on {:?} (port {bound_port})", bind_addresses);
+        (SocketAddr::new(first.ip(), bound_port), primary, extra, ipv6_bound)
+    };
+    let bound_port = ipv4_listener.local_addr()?.port();
 
     let cancel = CancellationToken::new();
     let connections = TaskTracker::new();
@@ -286,11 +343,18 @@ pub async fn start_with_port(
                     tracing::info!("Server stopped on: {}", ipv4_socket_addr);
                 }
                 _ = async {
-                    if let Some(listener) = ipv6_listener {
-                        if let Err(err) = start_server_with_listener(listener, tls_config, state, cancel.clone(), connections.clone()).await {
-                            tracing::error!("IPv6 server listener failed on {}: {err:#}", ipv6_socket_addr);
+                    let extra = extra_listeners.into_iter().map(|(socket_addr, listener)| {
+                        let tls_config = tls_config.clone();
+                        let state = state.clone();
+                        let cancel = cancel.clone();
+                        let connections = connections.clone();
+                        async move {
+                            if let Err(err) = start_server_with_listener(listener, tls_config, state, cancel, connections).await {
+                                tracing::error!("Server listener failed on {}: {err:#}", socket_addr);
+                            }
                         }
-                    }
+                    });
+                    futures_util::future::join_all(extra).await;
 
                     // Keep the future running forever, so we continue using "ipv4 only" even if ipv6 fails.
                     tokio::time::sleep(std::time::Duration::from_secs(u64::MAX)).await;
@@ -312,6 +376,15 @@ pub async fn start_with_port(
         ipv6_bound,
         task: Mutex::new(Some(task)),
     })
+}
+
+/// Binds a listener on a concrete address (IPv6 with `IPV6_V6ONLY`).
+async fn bind_listener(socket_addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
+    if socket_addr.is_ipv6() {
+        bind_ipv6_only(socket_addr)
+    } else {
+        Ok(tokio::net::TcpListener::bind(socket_addr).await?)
+    }
 }
 
 /// Binds an IPv6 listener with `IPV6_V6ONLY` enabled.

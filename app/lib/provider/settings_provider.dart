@@ -21,8 +21,10 @@ final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
   },
   onChanged: (_, next, ref) {
     final syncState = ref.read(parentIsolateProvider).syncState;
+    final bindInterfacesChanged = !_listEq(syncState.bindInterfaces, next.bindInterfaces);
     if (_listEq(syncState.networkWhitelist, next.networkWhitelist) &&
         _listEq(syncState.networkBlacklist, next.networkBlacklist) &&
+        !bindInterfacesChanged &&
         syncState.multicastGroup == next.multicastGroup &&
         syncState.discoveryTimeout == next.discoveryTimeout) {
       return;
@@ -34,10 +36,17 @@ final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
           IsolateSyncSettingsAction(
             networkWhitelist: next.networkWhitelist,
             networkBlacklist: next.networkBlacklist,
+            bindInterfaces: next.bindInterfaces,
             multicastGroup: next.multicastGroup,
             discoveryTimeout: next.discoveryTimeout,
           ),
         );
+
+    if (bindInterfacesChanged) {
+      // Interfaces are bound when discovery starts. The server is restarted by
+      // [SetBindInterfacesAction] (bind_interfaces_action.dart).
+      ref.redux(parentIsolateProvider).dispatch(IsolateDiscoveryRestartAction());
+    }
   },
 );
 
