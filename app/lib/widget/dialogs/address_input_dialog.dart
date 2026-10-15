@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/gen/strings.g.dart';
 import 'package:localsend_app/provider/device_info_provider.dart';
+import 'package:localsend_app/provider/diagnostics_provider.dart';
 import 'package:localsend_app/provider/http_provider.dart';
 import 'package:localsend_app/provider/last_devices.provider.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
 import 'package:localsend_app/provider/settings_provider.dart';
+import 'package:localsend_app/util/subnet_validator.dart';
 import 'package:localsend_app/widget/dialogs/error_dialog.dart';
 import 'package:localsend_isolates/model/device.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
@@ -32,27 +34,38 @@ enum _InputMode {
 
 /// A dialog to input an hash or address.
 /// Pops the dialog with the device if found.
+/// In IP mode, the input may include a port (`192.168.1.5:53317`, `[fe80::1]:53317`).
 class AddressInputDialog extends StatefulWidget {
-  const AddressInputDialog();
+  /// Opens directly in IP mode (used by the troubleshooter).
+  final bool startWithIp;
+
+  const AddressInputDialog({this.startWithIp = false});
 
   @override
   State<AddressInputDialog> createState() => _AddressInputDialogState();
 }
 
 class _AddressInputDialogState extends State<AddressInputDialog> with Refena {
-  final _selected = List.generate(_InputMode.values.length, (index) => index == 0);
-  _InputMode _mode = _InputMode.hashtag;
+  late final _selected = List.generate(_InputMode.values.length, (index) => index == (widget.startWithIp ? 1 : 0));
+  late _InputMode _mode = widget.startWithIp ? _InputMode.ip : _InputMode.hashtag;
   String _input = '';
   bool _fetching = false;
   String? _error;
 
-  Future<void> _submit(List<String> localIps, int port, [String? candidate]) async {
+  Future<void> _submit(List<String> localIps, int defaultPort, [String? candidate]) async {
+    int port = defaultPort;
     final List<String> candidates;
     final String input = _input.trim();
     if (candidate != null) {
       candidates = [candidate];
     } else if (_mode == _InputMode.ip) {
-      candidates = [input];
+      final parsed = parseHostPort(input);
+      if (parsed.error != null) {
+        setState(() => _error = parsed.error);
+        return;
+      }
+      candidates = [parsed.host]; // bare host: the Rust URL builder adds IPv6 brackets
+      port = parsed.port ?? port;
     } else {
       candidates = localIps.map((ip) => '${ip.ipPrefix}.$input').toList();
     }
@@ -108,6 +121,19 @@ class _AddressInputDialogState extends State<AddressInputDialog> with Refena {
 
     if (foundDevice != null) {
       ref.redux(lastDevicesProvider).dispatch(AddLastDeviceAction(foundDevice!));
+      final foundIp = foundDevice!.ip;
+      if (candidate == null && _mode == _InputMode.ip && foundIp != null && !ref.read(settingsProvider).peerIps.contains(foundIp)) {
+        // Typed addresses only, opt-in: remembered addresses are checked during later scans.
+        final remember = await showDialog<bool>(
+          context: context,
+          builder: (_) => RememberPeerDialog(ip: foundIp),
+        );
+        if (!mounted) return;
+        if (remember == true) {
+          await ref.notifier(settingsProvider).setPeerIps(addPeerIp(ref.read(settingsProvider).peerIps, foundIp));
+          if (!mounted) return;
+        }
+      }
       context.pop(foundDevice);
     } else {
       setState(() {
@@ -188,7 +214,7 @@ class _AddressInputDialogState extends State<AddressInputDialog> with Refena {
           ] else ...[
             if (lastDevices.isEmpty)
               Text(
-                '${t.general.example}: ${localIps.firstOrNull?.ipPrefix ?? '192.168.2'}.123',
+                '${t.general.example}: ${localIps.firstOrNull?.ipPrefix ?? '192.168.2'}.123 or ${localIps.firstOrNull?.ipPrefix ?? '192.168.2'}.123:${settings.port}',
                 style: const TextStyle(color: Colors.grey),
               )
             else
@@ -247,6 +273,25 @@ class _AddressInputDialogState extends State<AddressInputDialog> with Refena {
           onPressed: _fetching ? null : () async => _submit(localIps, settings.port),
           child: Text(t.general.confirm),
         ),
+      ],
+    );
+  }
+}
+
+/// Asks whether to remember a reached address for later scans. Defaults to no.
+class RememberPeerDialog extends StatelessWidget {
+  final String ip;
+
+  const RememberPeerDialog({required this.ip});
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Remember this address?'),
+      content: Text('Remember $ip for later scans? LocalSend will then check this address when looking for devices.'),
+      actions: [
+        FilledButton(onPressed: () => context.pop(false), child: const Text('Not now')),
+        TextButton(onPressed: () => context.pop(true), child: const Text('Remember')),
       ],
     );
   }
