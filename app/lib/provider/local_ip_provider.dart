@@ -115,5 +115,8 @@ Future<List<String>> _getIp({
 /// The Rust core's getifaddrs list (no multicast joins), used if `dart:io`
 /// returns nothing.
 Future<List<NamedAddresses>> _rustInterfaces() async {
-  return [for (final i in await rust_diag.listInterfaces()) (name: i.name, addresses: i.addresses)];
+  return [
+    for (final i in await rust_diag.listInterfaces())
+      if (!i.loopback) (name: i.name, addresses: i.addresses),
+  ];
 }

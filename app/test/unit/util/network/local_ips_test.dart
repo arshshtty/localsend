@@ -89,4 +89,25 @@ void main() {
       expect(ips, isNotEmpty);
     }
   }, testOn: 'linux');
+
+  test('dart:io empty, fallback only loopback/link-local: no address (QR disabled)', () async {
+    Future<List<NamedAddresses>> onlyLo() async => [
+      (name: 'lo', addresses: ['127.0.0.1', '::1']),
+      (name: 'eth0', addresses: ['169.254.10.20']),
+    ];
+    expect(await resolve(sources: [empty, onlyLo]), isEmpty);
+  });
+
+  test('veth/docker/br- interfaces rank last', () async {
+    Future<List<NamedAddresses>> withBridges() async => [
+      (name: 'veth1a2b', addresses: ['10.200.0.5']),
+      (name: 'br-0f1e', addresses: ['172.18.0.1']),
+      (name: 'docker0', addresses: ['172.17.0.2']),
+      (name: 'wlan0', addresses: ['192.168.1.1']),
+      (name: 'eth0', addresses: ['192.168.1.20']),
+    ];
+    final ips = await resolve(sources: [withBridges]);
+    expect(ips.take(2), ['192.168.1.20', '192.168.1.1']);
+    expect(ips.skip(2).toSet(), {'10.200.0.5', '172.18.0.1', '172.17.0.2'});
+  });
 }

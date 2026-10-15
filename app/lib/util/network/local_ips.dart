@@ -46,6 +46,7 @@ Future<List<String>> resolveLocalIps({
 }) async {
   var native = <String>[];
   var narrowed = false;
+  var virtualIps = <String>{};
   for (final (i, source) in interfaceSources.indexed) {
     final List<NamedAddresses> all;
     try {
@@ -57,7 +58,13 @@ Future<List<String>> resolveLocalIps({
       continue;
     }
     final chosen = filterBindInterfaces(all, bindInterfaces, (e) => e.name);
-    native = chosen.expand((e) => e.addresses).where((ip) => !ip.contains(':')).toSet().toList(); // IPv4 only for now
+    // IPv4 only for now. Loopback and link-local never reach a peer (dart:io
+    // already omits them; the Rust fallback does not).
+    native = chosen.expand((e) => e.addresses).where(isAdvertisableIpv4).toSet().toList();
+    virtualIps = {
+      for (final e in chosen)
+        if (isVirtualInterface(e.name)) ...e.addresses,
+    };
     if (native.isNotEmpty) {
       narrowed = chosen.length < all.length;
       break;
@@ -69,8 +76,14 @@ Future<List<String>> resolveLocalIps({
   if (narrowed && ip != null && !native.contains(ip)) {
     ip = null;
   }
-  return rankIpAddresses(native, ip);
+  return rankIpAddresses(native, ip, deprioritized: virtualIps);
 }
+
+/// IPv4, not loopback (127/8) and not link-local (169.254/16).
+bool isAdvertisableIpv4(String ip) => !ip.contains(':') && !ip.startsWith('127.') && !ip.startsWith('169.254.');
+
+/// Container/bridge interfaces (veth*, docker*, br-*) that are rarely the LAN.
+bool isVirtualInterface(String name) => name.startsWith('veth') || name.startsWith('docker') || name.startsWith('br-');
 
 /// Runs [source] in a guarded zone with a timeout. Returns null on any error,
 /// including errors the plugin leaks outside the returned future.
@@ -112,19 +125,19 @@ List<T> filterBindInterfaces<T>(List<T> interfaces, List<String> bindInterfaces,
   return chosen;
 }
 
-List<String> rankIpAddresses(List<String> nativeResult, String? thirdPartyResult) {
+List<String> rankIpAddresses(List<String> nativeResult, String? thirdPartyResult, {Set<String> deprioritized = const {}}) {
   if (thirdPartyResult == null) {
     // only take the list
-    return nativeResult._rankIpAddresses(null);
+    return nativeResult._rankIpAddresses(null, deprioritized);
   } else if (nativeResult.isEmpty) {
     // only take the first IP from third party library
     return [thirdPartyResult];
   } else if (thirdPartyResult.endsWith('.1')) {
     // merge
-    return {thirdPartyResult, ...nativeResult}.toList()._rankIpAddresses(null);
+    return {thirdPartyResult, ...nativeResult}.toList()._rankIpAddresses(null, deprioritized);
   } else {
     // merge but prefer result from third party library
-    return {thirdPartyResult, ...nativeResult}.toList()._rankIpAddresses(thirdPartyResult);
+    return {thirdPartyResult, ...nativeResult}.toList()._rankIpAddresses(thirdPartyResult, deprioritized);
   }
 }
 
@@ -132,12 +145,10 @@ List<String> rankIpAddresses(List<String> nativeResult, String? thirdPartyResult
 /// Currently,
 /// - sorts ending with ".1" last
 /// - primary is always first
+/// - [deprioritized] (container/bridge interfaces) after everything else
 extension ListIpExt on List<String> {
-  List<String> _rankIpAddresses(String? primary) {
-    return sorted((a, b) {
-      int scoreA = a == primary ? 10 : (a.endsWith('.1') ? 0 : 1);
-      int scoreB = b == primary ? 10 : (b.endsWith('.1') ? 0 : 1);
-      return scoreB.compareTo(scoreA);
-    });
+  List<String> _rankIpAddresses(String? primary, [Set<String> deprioritized = const {}]) {
+    int score(String ip) => ip == primary ? 10 : (deprioritized.contains(ip) ? -1 : (ip.endsWith('.1') ? 0 : 1));
+    return sorted((a, b) => score(b).compareTo(score(a)));
   }
 }
