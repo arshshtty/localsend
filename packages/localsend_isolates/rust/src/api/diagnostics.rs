@@ -208,7 +208,6 @@ mod tests {
                 pages: Default::default(),
             },
             None,
-            vec![],
         )
         .await
         .expect("server starts");

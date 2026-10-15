@@ -209,7 +209,9 @@ pub async fn start_discovery(
             interface_filter: InterfaceFilter {
                 whitelist: network_whitelist,
                 blacklist: network_blacklist,
-                interface_names: crate::diagnostics_impl::resolve_bind_interfaces_now(bind_interfaces),
+                interface_names: crate::diagnostics_impl::resolve_bind_interfaces_now(
+                    bind_interfaces,
+                ),
             },
             device: MulticastDevice {
                 alias,
