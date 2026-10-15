@@ -114,8 +114,9 @@ void main() {
 
   test('extra subnets are scanned only when set', () async {
     final probes = FakeProbes();
-    final r = await run(probes, extraSubnets: ['10.0.5.0/24']);
-    expect(r.seeds, ['10.0.5.0']);
+    final r = await run(probes, extraSubnets: ['10.0.5.0/26']);
+    expect(r.seeds, isEmpty);
+    expect(probes.probeCalls.single, hasLength(62));
     expect(probes.listCalls, 0);
     expect(probes.tailscaleCalls, 0);
   });

@@ -38,11 +38,8 @@ String? validateSubnet(String input) {
   return null;
 }
 
-/// Normalises a valid subnet for duplicate checks (`a.b.c.*` == `a.b.c.0/24`).
-String normalizeSubnet(String input) {
-  final s = input.trim();
-  return s.endsWith('.*') ? '${s.substring(0, s.length - 2)}.0/24' : s;
-}
+/// Normalises a valid subnet for duplicate checks (`a.b.c.*` is never valid).
+String normalizeSubnet(String input) => input.trim();
 
 /// Validates a single IPv4/IPv6 address (IPv6 zone ids like `%eth0` allowed).
 bool isValidIp(String input) {

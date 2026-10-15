@@ -20,7 +20,7 @@ void main() {
   });
 
   test('normalizeSubnet', () {
-    expect(normalizeSubnet('10.0.6.*'), normalizeSubnet('10.0.6.0/24'));
+    expect(normalizeSubnet(' 10.0.6.0/26 '), '10.0.6.0/26');
   });
 
   test('isValidIp', () {
