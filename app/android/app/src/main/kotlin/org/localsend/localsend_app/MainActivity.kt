@@ -45,6 +45,18 @@ class MainActivity : FlutterActivity() {
     private val pendingShareIntents = mutableListOf<Intent>()
     private var shareIntentReady = false
 
+    private val multicastLock by lazy { MulticastLockHolder(this) }
+
+    override fun onResume() {
+        super.onResume()
+        multicastLock.setForeground(true)
+    }
+
+    override fun onPause() {
+        multicastLock.setForeground(false)
+        super.onPause()
+    }
+
     override fun onNewIntent(intent: Intent) {
         if (!shareIntentReady && (intent.action == Intent.ACTION_SEND || intent.action == Intent.ACTION_SEND_MULTIPLE)) {
             pendingShareIntents.add(intent)
@@ -121,6 +133,20 @@ class MainActivity : FlutterActivity() {
 
                 "isAnimationsEnabled" -> {
                     result.success(isAnimationsEnabled())
+                }
+
+                "multicastScanStarted" -> {
+                    multicastLock.scanStarted()
+                    result.success(null)
+                }
+
+                "multicastScanEnded" -> {
+                    multicastLock.scanEnded()
+                    result.success(null)
+                }
+
+                "isMulticastLockHeld" -> {
+                    result.success(multicastLock.isHeld())
                 }
 
                 "getDownloadsDirectory" -> {

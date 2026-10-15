@@ -64,6 +64,36 @@ Future<bool> requestLocalNetworkPermissionAndroid() async {
   }
 }
 
+/// Keeps the Android MulticastLock held while [scan] runs (the lock is also
+/// held while the app is in the foreground, see MulticastLockHolder.kt).
+/// Errors from the channel are logged and never fail the scan.
+Future<T> withMulticastLockAndroid<T>(Future<T> Function() scan) async {
+  try {
+    await _methodChannel.invokeMethod<void>('multicastScanStarted');
+  } catch (e) {
+    _logger.warning('Could not acquire multicast lock', e);
+  }
+  try {
+    return await scan();
+  } finally {
+    try {
+      await _methodChannel.invokeMethod<void>('multicastScanEnded');
+    } catch (e) {
+      _logger.warning('Could not release multicast lock', e);
+    }
+  }
+}
+
+/// Whether the MulticastLock is currently held (diagnostics).
+Future<bool> isMulticastLockHeldAndroid() async {
+  try {
+    return await _methodChannel.invokeMethod<bool>('isMulticastLockHeld') ?? false;
+  } catch (e) {
+    _logger.warning('Could not query multicast lock', e);
+    return false;
+  }
+}
+
 Future<void> openContentUri({
   required String uri,
 }) async {

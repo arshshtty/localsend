@@ -73,6 +73,7 @@ class FetchLocalIpAction extends AsyncReduxAction<LocalIpService, NetworkState> 
       localIps: await _getIp(
         whitelist: notifier._settingsService.state.networkWhitelist,
         blacklist: notifier._settingsService.state.networkBlacklist,
+        bindInterfaces: notifier._settingsService.state.bindInterfaces,
       ),
       initialized: true,
     );
@@ -82,6 +83,7 @@ class FetchLocalIpAction extends AsyncReduxAction<LocalIpService, NetworkState> 
 Future<List<String>> _getIp({
   required List<String>? whitelist,
   required List<String>? blacklist,
+  List<String> bindInterfaces = const [],
 }) async {
   final info = plugin.NetworkInfo();
   String? ip;
@@ -91,19 +93,38 @@ Future<List<String>> _getIp({
     _logger.warning('Failed to get wifi IP', e);
   }
 
-  final nativeResult =
-      (await getNetworkInterfaces(
-            whitelist: whitelist,
-            blacklist: blacklist,
-          ))
-          .map((interface) => interface.addresses.map((a) => a.address).toList())
-          .expand((ip) => ip)
-          .where((ip) => !ip.contains(':')) // ignore IPv6 for now
-          .toList();
+  final all = await getNetworkInterfaces(whitelist: whitelist, blacklist: blacklist);
+  final interfaces = filterBindInterfaces(all, bindInterfaces, (i) => i.name);
+  final narrowed = interfaces.length < all.length;
+  final nativeResult = interfaces
+      .map((interface) => interface.addresses.map((a) => a.address).toList())
+      .expand((ip) => ip)
+      .where((ip) => !ip.contains(':')) // ignore IPv6 for now
+      .toList();
 
+  // The Wi-Fi IP from the plugin is only kept if it belongs to a chosen interface.
+  if (narrowed && ip != null && !nativeResult.contains(ip)) {
+    ip = null;
+  }
   final addresses = rankIpAddresses(nativeResult, ip);
   _logger.info('Network state: $addresses');
   return addresses;
+}
+
+/// Keeps the interfaces named in [bindInterfaces]. Empty [bindInterfaces]
+/// means all interfaces; if none of the names exist (adapter removed), all
+/// interfaces are kept as well and a warning is logged, matching Rust's
+/// `resolve_bind_interfaces`.
+List<T> filterBindInterfaces<T>(List<T> interfaces, List<String> bindInterfaces, String Function(T) name) {
+  if (bindInterfaces.isEmpty) {
+    return interfaces;
+  }
+  final chosen = interfaces.where((i) => bindInterfaces.contains(name(i))).toList();
+  if (chosen.isEmpty) {
+    _logger.warning('None of the bind interfaces $bindInterfaces exist, using all interfaces');
+    return interfaces;
+  }
+  return chosen;
 }
 
 List<String> rankIpAddresses(List<String> nativeResult, String? thirdPartyResult) {

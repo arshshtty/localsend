@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:localsend_app/gen/strings.g.dart';
@@ -14,6 +15,10 @@ import 'package:refena_flutter/refena_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 final _listEq = const ListEquality().equals;
+
+/// Delay before applying a `bindInterfaces` change (discovery restart).
+const bindInterfacesDebounce = Duration(milliseconds: 500);
+Timer? _discoveryRestartDebounce;
 
 final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
   (ref) {
@@ -43,9 +48,13 @@ final settingsProvider = NotifierProvider<SettingsService, SettingsState>(
         );
 
     if (bindInterfacesChanged) {
-      // Interfaces are bound when discovery starts. The server is restarted by
-      // [SetBindInterfacesAction] (bind_interfaces_action.dart).
-      ref.redux(parentIsolateProvider).dispatch(IsolateDiscoveryRestartAction());
+      // Multicast joins/announces are scoped when discovery starts, so restart
+      // it, debounced so rapid toggles cause a single restart. The HTTP server
+      // listens on all interfaces and is never restarted for this.
+      _discoveryRestartDebounce?.cancel();
+      _discoveryRestartDebounce = Timer(bindInterfacesDebounce, () {
+        ref.redux(parentIsolateProvider).dispatch(IsolateDiscoveryRestartAction());
+      });
     }
   },
 );

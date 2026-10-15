@@ -183,33 +183,12 @@ pub(crate) fn local_interfaces(filter: &InterfaceFilter) -> std::io::Result<Loca
     Ok(result)
 }
 
-/// The addresses a server restricted by `filter` binds to: the IPv4 and
-/// non-link-local IPv6 addresses of the interfaces passing `filter`
-/// (loopback included when named explicitly).
-pub fn interface_bind_addresses(filter: &InterfaceFilter) -> std::io::Result<Vec<IpAddr>> {
-    let interfaces = if_addrs::get_if_addrs()?;
-    let mut by_name: std::collections::HashMap<String, Vec<IpAddr>> = std::collections::HashMap::new();
-    for interface in &interfaces {
-        by_name.entry(interface.name.clone()).or_default().push(interface.ip());
-    }
-    let mut addresses: Vec<IpAddr> = interfaces
-        .iter()
-        .filter(|interface| !filter.is_ignored(&interface.name, &by_name[&interface.name]))
-        .map(|interface| interface.ip())
-        .filter(|ip| match ip {
-            IpAddr::V4(_) => true,
-            IpAddr::V6(v6) => !v6.is_unicast_link_local(),
-        })
-        .collect();
-    // IPv4 first, so the primary listener is IPv4 when there is one.
-    addresses.sort_by_key(|ip| (ip.is_ipv6(), *ip));
-    addresses.dedup();
-    Ok(addresses)
-}
-
 /// Names of the local interfaces (for validating saved interface names).
 pub fn interface_names() -> std::io::Result<Vec<String>> {
-    let mut names: Vec<String> = if_addrs::get_if_addrs()?.into_iter().map(|i| i.name).collect();
+    let mut names: Vec<String> = if_addrs::get_if_addrs()?
+        .into_iter()
+        .map(|i| i.name)
+        .collect();
     names.sort();
     names.dedup();
     Ok(names)
@@ -341,7 +320,8 @@ mod tests {
     }
 
     /// Linux only: in a fresh user + network namespace with two veth links,
-    /// `interface_names` restricts the interfaces multicast binds/joins on.
+    /// `interface_names` restricts the interfaces multicast binds/joins on (and
+    /// the advertised interface list), while the HTTP server still listens on all.
     /// Skips (passes) when unprivileged netns/veth are unavailable.
     #[cfg(target_os = "linux")]
     #[test]
@@ -398,24 +378,26 @@ mod tests {
             }]
         );
         // The multicast sockets follow the same filter.
-        let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-        let sockets = rt
-            .block_on(async {
-                crate::multicast::socket::bind_multicast_sockets(
-                    crate::multicast::DEFAULT_MULTICAST_GROUP,
-                    None,
-                    0,
-                    &only_v1,
-                )
-            });
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let sockets = rt.block_on(async {
+            crate::multicast::socket::bind_multicast_sockets(
+                crate::multicast::DEFAULT_MULTICAST_GROUP,
+                None,
+                0,
+                &only_v1,
+            )
+        });
         let sockets = sockets.expect("bind on v1");
         assert_eq!(sockets.len(), 1);
 
-        // The HTTP server listens only on v1's address.
-        assert_eq!(interface_bind_addresses(&only_v1).unwrap(), vec!["10.78.1.1".parse::<IpAddr>().unwrap()]);
+        // The HTTP server is not scoped: it listens on 0.0.0.0/[::] and
+        // accepts on every interface, including ones not in the filter.
         rt.block_on(async {
             let (_stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
-            let handle = crate::http::server::start_with_port_filtered(
+            let handle = crate::http::server::start_with_port(
                 0,
                 None,
                 crate::http::state::ClientInfo {
@@ -429,18 +411,23 @@ mod tests {
                 None,
                 Default::default(),
                 stop_rx,
-                &only_v1,
             )
             .await
-            .expect("server starts on v1");
+            .expect("server starts");
             let port = handle.port();
             let connect = |ip: &'static str| async move {
-                tokio::time::timeout(std::time::Duration::from_secs(2), tokio::net::TcpStream::connect((ip, port)))
-                    .await
-                    .is_ok_and(|r| r.is_ok())
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    tokio::net::TcpStream::connect((ip, port)),
+                )
+                .await
+                .is_ok_and(|r| r.is_ok())
             };
             assert!(connect("10.78.1.1").await, "v1 must accept");
-            assert!(!connect("10.78.0.1").await, "v0 must refuse");
+            assert!(
+                connect("10.78.0.1").await,
+                "v0 must accept too (server is not filtered)"
+            );
         });
     }
 }
