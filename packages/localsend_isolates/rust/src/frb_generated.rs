@@ -4603,6 +4603,7 @@ impl SseDecode for crate::api::diagnostics::PeerProbeResult {
         let mut var_source = <crate::api::diagnostics::PeerSource>::sse_decode(deserializer);
         let mut var_reachable = <bool>::sse_decode(deserializer);
         let mut var_alias = <Option<String>>::sse_decode(deserializer);
+        let mut var_fingerprint = <Option<String>>::sse_decode(deserializer);
         let mut var_error = <Option<String>>::sse_decode(deserializer);
         return crate::api::diagnostics::PeerProbeResult {
             ip: var_ip,
@@ -4610,6 +4611,7 @@ impl SseDecode for crate::api::diagnostics::PeerProbeResult {
             source: var_source,
             reachable: var_reachable,
             alias: var_alias,
+            fingerprint: var_fingerprint,
             error: var_error,
         };
     }
@@ -4656,6 +4658,9 @@ impl SseDecode for crate::api::diagnostics::PortStatus {
             2 => {
                 let mut var_field0 = <String>::sse_decode(deserializer);
                 return crate::api::diagnostics::PortStatus::Denied(var_field0);
+            }
+            3 => {
+                return crate::api::diagnostics::PortStatus::HeldByThisApp;
             }
             _ => {
                 unimplemented!("");
@@ -6151,6 +6156,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::diagnostics::PeerProbeResult 
             self.source.into_into_dart().into_dart(),
             self.reachable.into_into_dart().into_dart(),
             self.alias.into_into_dart().into_dart(),
+            self.fingerprint.into_into_dart().into_dart(),
             self.error.into_into_dart().into_dart(),
         ]
         .into_dart()
@@ -6220,6 +6226,7 @@ impl flutter_rust_bridge::IntoDart for crate::api::diagnostics::PortStatus {
             crate::api::diagnostics::PortStatus::Denied(field0) => {
                 [2.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
+            crate::api::diagnostics::PortStatus::HeldByThisApp => [3.into_dart()].into_dart(),
             _ => {
                 unimplemented!("");
             }
@@ -7841,6 +7848,7 @@ impl SseEncode for crate::api::diagnostics::PeerProbeResult {
         <crate::api::diagnostics::PeerSource>::sse_encode(self.source, serializer);
         <bool>::sse_encode(self.reachable, serializer);
         <Option<String>>::sse_encode(self.alias, serializer);
+        <Option<String>>::sse_encode(self.fingerprint, serializer);
         <Option<String>>::sse_encode(self.error, serializer);
     }
 }
@@ -7883,6 +7891,9 @@ impl SseEncode for crate::api::diagnostics::PortStatus {
             crate::api::diagnostics::PortStatus::Denied(field0) => {
                 <i32>::sse_encode(2, serializer);
                 <String>::sse_encode(field0, serializer);
+            }
+            crate::api::diagnostics::PortStatus::HeldByThisApp => {
+                <i32>::sse_encode(3, serializer);
             }
             _ => {
                 unimplemented!("");

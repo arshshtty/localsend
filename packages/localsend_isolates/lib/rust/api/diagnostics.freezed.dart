@@ -351,13 +351,14 @@ extension PortStatusPatterns on PortStatus {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PortStatus_Free value)?  free,TResult Function( PortStatus_InUse value)?  inUse,TResult Function( PortStatus_Denied value)?  denied,required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>({TResult Function( PortStatus_Free value)?  free,TResult Function( PortStatus_InUse value)?  inUse,TResult Function( PortStatus_Denied value)?  denied,TResult Function( PortStatus_HeldByThisApp value)?  heldByThisApp,required TResult orElse(),}){
 final _that = this;
 switch (_that) {
 case PortStatus_Free() when free != null:
 return free(_that);case PortStatus_InUse() when inUse != null:
 return inUse(_that);case PortStatus_Denied() when denied != null:
-return denied(_that);case _:
+return denied(_that);case PortStatus_HeldByThisApp() when heldByThisApp != null:
+return heldByThisApp(_that);case _:
   return orElse();
 
 }
@@ -375,13 +376,14 @@ return denied(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PortStatus_Free value)  free,required TResult Function( PortStatus_InUse value)  inUse,required TResult Function( PortStatus_Denied value)  denied,}){
+@optionalTypeArgs TResult map<TResult extends Object?>({required TResult Function( PortStatus_Free value)  free,required TResult Function( PortStatus_InUse value)  inUse,required TResult Function( PortStatus_Denied value)  denied,required TResult Function( PortStatus_HeldByThisApp value)  heldByThisApp,}){
 final _that = this;
 switch (_that) {
 case PortStatus_Free():
 return free(_that);case PortStatus_InUse():
 return inUse(_that);case PortStatus_Denied():
-return denied(_that);}
+return denied(_that);case PortStatus_HeldByThisApp():
+return heldByThisApp(_that);}
 }
 /// A variant of `map` that fallback to returning `null`.
 ///
@@ -395,13 +397,14 @@ return denied(_that);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PortStatus_Free value)?  free,TResult? Function( PortStatus_InUse value)?  inUse,TResult? Function( PortStatus_Denied value)?  denied,}){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>({TResult? Function( PortStatus_Free value)?  free,TResult? Function( PortStatus_InUse value)?  inUse,TResult? Function( PortStatus_Denied value)?  denied,TResult? Function( PortStatus_HeldByThisApp value)?  heldByThisApp,}){
 final _that = this;
 switch (_that) {
 case PortStatus_Free() when free != null:
 return free(_that);case PortStatus_InUse() when inUse != null:
 return inUse(_that);case PortStatus_Denied() when denied != null:
-return denied(_that);case _:
+return denied(_that);case PortStatus_HeldByThisApp() when heldByThisApp != null:
+return heldByThisApp(_that);case _:
   return null;
 
 }
@@ -418,12 +421,13 @@ return denied(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  free,TResult Function( String? pidHint)?  inUse,TResult Function( String field0)?  denied,required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>({TResult Function()?  free,TResult Function( String? pidHint)?  inUse,TResult Function( String field0)?  denied,TResult Function()?  heldByThisApp,required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case PortStatus_Free() when free != null:
 return free();case PortStatus_InUse() when inUse != null:
 return inUse(_that.pidHint);case PortStatus_Denied() when denied != null:
-return denied(_that.field0);case _:
+return denied(_that.field0);case PortStatus_HeldByThisApp() when heldByThisApp != null:
+return heldByThisApp();case _:
   return orElse();
 
 }
@@ -441,12 +445,13 @@ return denied(_that.field0);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  free,required TResult Function( String? pidHint)  inUse,required TResult Function( String field0)  denied,}) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>({required TResult Function()  free,required TResult Function( String? pidHint)  inUse,required TResult Function( String field0)  denied,required TResult Function()  heldByThisApp,}) {final _that = this;
 switch (_that) {
 case PortStatus_Free():
 return free();case PortStatus_InUse():
 return inUse(_that.pidHint);case PortStatus_Denied():
-return denied(_that.field0);}
+return denied(_that.field0);case PortStatus_HeldByThisApp():
+return heldByThisApp();}
 }
 /// A variant of `when` that fallback to returning `null`
 ///
@@ -460,12 +465,13 @@ return denied(_that.field0);}
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  free,TResult? Function( String? pidHint)?  inUse,TResult? Function( String field0)?  denied,}) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>({TResult? Function()?  free,TResult? Function( String? pidHint)?  inUse,TResult? Function( String field0)?  denied,TResult? Function()?  heldByThisApp,}) {final _that = this;
 switch (_that) {
 case PortStatus_Free() when free != null:
 return free();case PortStatus_InUse() when inUse != null:
 return inUse(_that.pidHint);case PortStatus_Denied() when denied != null:
-return denied(_that.field0);case _:
+return denied(_that.field0);case PortStatus_HeldByThisApp() when heldByThisApp != null:
+return heldByThisApp();case _:
   return null;
 
 }
@@ -636,6 +642,38 @@ as String,
 
 
 }
+
+/// @nodoc
+
+
+class PortStatus_HeldByThisApp extends PortStatus {
+  const PortStatus_HeldByThisApp(): super._();
+  
+
+
+
+
+
+
+@override
+bool operator ==(Object other) {
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PortStatus_HeldByThisApp);
+}
+
+
+@override
+int get hashCode => runtimeType.hashCode;
+
+@override
+String toString() {
+  return 'PortStatus.heldByThisApp()';
+}
+
+
+}
+
+
+
 
 /// @nodoc
 mixin _$StartError {

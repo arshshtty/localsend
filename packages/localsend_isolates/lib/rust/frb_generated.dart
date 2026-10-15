@@ -3106,14 +3106,15 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   PeerProbeResult dco_decode_peer_probe_result(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     final arr = raw as List<dynamic>;
-    if (arr.length != 6) throw Exception('unexpected arr length: expect 6 but see ${arr.length}');
+    if (arr.length != 7) throw Exception('unexpected arr length: expect 7 but see ${arr.length}');
     return PeerProbeResult(
       ip: dco_decode_String(arr[0]),
       port: dco_decode_u_16(arr[1]),
       source: dco_decode_peer_source(arr[2]),
       reachable: dco_decode_bool(arr[3]),
       alias: dco_decode_opt_String(arr[4]),
-      error: dco_decode_opt_String(arr[5]),
+      fingerprint: dco_decode_opt_String(arr[5]),
+      error: dco_decode_opt_String(arr[6]),
     );
   }
 
@@ -3148,6 +3149,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return PortStatus_Denied(
           dco_decode_String(raw[1]),
         );
+      case 3:
+        return PortStatus_HeldByThisApp();
       default:
         throw Exception('unreachable');
     }
@@ -4638,8 +4641,17 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     var var_source = sse_decode_peer_source(deserializer);
     var var_reachable = sse_decode_bool(deserializer);
     var var_alias = sse_decode_opt_String(deserializer);
+    var var_fingerprint = sse_decode_opt_String(deserializer);
     var var_error = sse_decode_opt_String(deserializer);
-    return PeerProbeResult(ip: var_ip, port: var_port, source: var_source, reachable: var_reachable, alias: var_alias, error: var_error);
+    return PeerProbeResult(
+      ip: var_ip,
+      port: var_port,
+      source: var_source,
+      reachable: var_reachable,
+      alias: var_alias,
+      fingerprint: var_fingerprint,
+      error: var_error,
+    );
   }
 
   @protected
@@ -4671,6 +4683,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case 2:
         var var_field0 = sse_decode_String(deserializer);
         return PortStatus_Denied(var_field0);
+      case 3:
+        return PortStatus_HeldByThisApp();
       default:
         throw UnimplementedError('');
     }
@@ -6190,6 +6204,7 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     sse_encode_peer_source(self.source, serializer);
     sse_encode_bool(self.reachable, serializer);
     sse_encode_opt_String(self.alias, serializer);
+    sse_encode_opt_String(self.fingerprint, serializer);
     sse_encode_opt_String(self.error, serializer);
   }
 
@@ -6218,6 +6233,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
       case PortStatus_Denied(field0: final field0):
         sse_encode_i_32(2, serializer);
         sse_encode_String(field0, serializer);
+      case PortStatus_HeldByThisApp():
+        sse_encode_i_32(3, serializer);
     }
   }
 

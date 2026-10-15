@@ -34,7 +34,9 @@ class Diagnostics {
   final PortStatus tcpPort;
   final PortStatus udpPort;
 
-  /// `true` while this is the PR 1 placeholder (fixed fake data).
+  /// Permanent field: `true` only when the data comes from a stub
+  /// (fixed fake data, e.g. this placeholder or test fakes); real
+  /// diagnostics always set `false`. The UI may show a "sample data" hint.
   final bool isStub;
 
   const Diagnostics({
@@ -131,6 +133,9 @@ class PeerProbeResult {
 
   /// Device alias if a LocalSend device answered.
   final String? alias;
+
+  /// Device fingerprint if a LocalSend device answered.
+  final String? fingerprint;
   final String? error;
 
   const PeerProbeResult({
@@ -139,11 +144,12 @@ class PeerProbeResult {
     required this.source,
     required this.reachable,
     this.alias,
+    this.fingerprint,
     this.error,
   });
 
   @override
-  int get hashCode => ip.hashCode ^ port.hashCode ^ source.hashCode ^ reachable.hashCode ^ alias.hashCode ^ error.hashCode;
+  int get hashCode => ip.hashCode ^ port.hashCode ^ source.hashCode ^ reachable.hashCode ^ alias.hashCode ^ fingerprint.hashCode ^ error.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -155,6 +161,7 @@ class PeerProbeResult {
           source == other.source &&
           reachable == other.reachable &&
           alias == other.alias &&
+          fingerprint == other.fingerprint &&
           error == other.error;
 }
 
@@ -172,12 +179,18 @@ sealed class PortStatus with _$PortStatus {
   const PortStatus._();
 
   const factory PortStatus.free() = PortStatus_Free;
+
+  /// Bound by another process. `pid_hint` (e.g. `"1234 (name)"`) is
+  /// best-effort; treat the process name as sensitive in any export.
   const factory PortStatus.inUse({
     String? pidHint,
   }) = PortStatus_InUse;
   const factory PortStatus.denied(
     String field0,
   ) = PortStatus_Denied;
+
+  /// Held by this app's own running server or discovery (not a conflict).
+  const factory PortStatus.heldByThisApp() = PortStatus_HeldByThisApp;
 }
 
 @freezed

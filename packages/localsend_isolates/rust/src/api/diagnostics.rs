@@ -19,8 +19,12 @@ pub enum JoinResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PortStatus {
     Free,
+    /// Bound by another process. `pid_hint` (e.g. `"1234 (name)"`) is
+    /// best-effort; treat the process name as sensitive in any export.
     InUse { pid_hint: Option<String> },
     Denied(String),
+    /// Held by this app's own running server or discovery (not a conflict).
+    HeldByThisApp,
 }
 
 /// Diagnostics for one network interface.
@@ -46,7 +50,9 @@ pub struct Diagnostics {
     pub interfaces: Vec<InterfaceDiag>,
     pub tcp_port: PortStatus,
     pub udp_port: PortStatus,
-    /// `true` while this is the PR 1 placeholder (fixed fake data).
+    /// Permanent field: `true` only when the data comes from a stub
+    /// (fixed fake data, e.g. this placeholder or test fakes); real
+    /// diagnostics always set `false`. The UI may show a "sample data" hint.
     pub is_stub: bool,
 }
 
@@ -79,6 +85,8 @@ pub struct PeerProbeResult {
     pub reachable: bool,
     /// Device alias if a LocalSend device answered.
     pub alias: Option<String>,
+    /// Device fingerprint if a LocalSend device answered.
+    pub fingerprint: Option<String>,
     pub error: Option<String>,
 }
 
