@@ -113,9 +113,16 @@ pub(crate) const MAX_CONCURRENT_PROBES: usize = 16;
 /// At most this many Tailscale CLI peers are probed per scan.
 pub(crate) const MAX_TAILNET_PEERS: usize = 64;
 
-/// Maximum explicit targets per `probe_ips` call: 32 entered peer IPs plus
-/// 64 hosts of small extra subnets. Matches `maxDirectProbeTargets` in Dart.
-pub(crate) const MAX_PROBE_TARGETS: usize = 32 + 64;
+/// Entered peer IPs probed per scan. Matches `maxPeerIpsPerScan` in Dart.
+pub(crate) const MAX_PEER_IPS: usize = 32;
+
+/// Largest extra subnet: a /26 (64 addresses). Matches `minExtraSubnetPrefix`
+/// in Dart, the UI validator and docs/troubleshooter.md.
+pub(crate) const MAX_EXTRA_SUBNET_PREFIX_HOSTS: usize = 1 << (32 - 26);
+
+/// Maximum explicit targets per `probe_ips` call: 32 entered peer IPs plus one
+/// /26 worth of extra subnet hosts. Matches `maxDirectProbeTargets` in Dart.
+pub(crate) const MAX_PROBE_TARGETS: usize = MAX_PEER_IPS + MAX_EXTRA_SUBNET_PREFIX_HOSTS;
 
 /// Probes one peer: reachable when a LocalSend `info` endpoint answers.
 async fn probe_one(
@@ -445,5 +452,12 @@ mod tests {
             .collect();
         let results = probe_ips(ips, free_port(), 50).await;
         assert_eq!(results.len(), MAX_PROBE_TARGETS);
+    }
+
+    /// QA r1 F2: one cap everywhere (/26 = 64 hosts, 96 direct targets).
+    #[test]
+    fn probe_cap_matches_dart_and_docs() {
+        assert_eq!(MAX_EXTRA_SUBNET_PREFIX_HOSTS, 64);
+        assert_eq!(MAX_PROBE_TARGETS, 96);
     }
 }

@@ -1,4 +1,5 @@
 import 'package:localsend_app/util/network/scan_targets.dart';
+import 'package:localsend_app/util/subnet_validator.dart';
 import 'package:localsend_isolates/rust/api/diagnostics.dart';
 import 'package:test/test.dart';
 
@@ -15,21 +16,44 @@ InterfaceDiag _iface(String name, List<String> addresses, {bool up = true, bool 
 
 void main() {
   group('parseExtraSubnet', () {
-    test('accepts /24 CIDR and a.b.c.*', () {
-      expect(parseExtraSubnet('10.0.5.0/24')!.subnetSeeds, ['10.0.5.0']);
-      expect(parseExtraSubnet('10.0.5.77/24')!.subnetSeeds, ['10.0.5.0']);
-      expect(parseExtraSubnet(' 192.168.8.* ')!.subnetSeeds, ['192.168.8.0']);
+    test('accepts /26 (62 hosts, probed directly, no /24 seeds)', () {
+      final s = parseExtraSubnet(' 10.0.5.64/26 ')!;
+      expect(s.subnetSeeds, isEmpty);
+      expect(s.hosts, hasLength(62));
+      expect(s.hosts.first, '10.0.5.65');
+      expect(s.hosts.last, '10.0.5.126');
+    });
+
+    test('QA r1 F2: same /26 cap as the UI validator', () {
+      expect(minExtraSubnetPrefix, 26);
+      for (final entry in ['10.0.5.0/24', '10.0.5.0/25', '192.168.8.*', '10.0.5.0/26', '10.0.5.7/32', '10.0.5.4/30']) {
+        expect(parseExtraSubnet(entry) != null, validateSubnet(entry) == null, reason: entry);
+      }
     });
 
     test('small prefixes become host probes', () {
       expect(parseExtraSubnet('10.0.0.7/32')!.hosts, ['10.0.0.7']);
       expect(parseExtraSubnet('10.0.0.7')!.hosts, ['10.0.0.7']);
       expect(parseExtraSubnet('10.0.0.4/30')!.hosts, ['10.0.0.5', '10.0.0.6']);
-      expect(parseExtraSubnet('10.0.0.128/25')!.hosts, hasLength(126));
+      expect(parseExtraSubnet('10.0.0.192/26')!.hosts, hasLength(62));
     });
 
-    test('rejects invalid and too large (> /24) entries', () {
-      for (final bad in ['', 'abc', '10.0.0.0/23', '10.0.0.0/16', '10.0.0.0/33', '10.0.0.0/x', '10.0.0/24', '::1/128', '1.2.3.4/24/1', '10.*']) {
+    test('rejects invalid and too large (> /26) entries', () {
+      for (final bad in [
+        '',
+        'abc',
+        '10.0.0.0/24',
+        '10.0.0.0/25',
+        '10.0.0.*',
+        '10.0.0.0/23',
+        '10.0.0.0/16',
+        '10.0.0.0/33',
+        '10.0.0.0/x',
+        '10.0.0/24',
+        '::1/128',
+        '1.2.3.4/24/1',
+        '10.*',
+      ]) {
         expect(parseExtraSubnet(bad), isNull, reason: bad);
       }
     });
@@ -80,16 +104,16 @@ void main() {
       final plan = buildExtraScanPlan(
         localIps: ['192.168.1.2'],
         bindInterfaces: ['wg0', 'tailscale0'],
-        extraSubnets: ['192.168.1.0/24', '10.0.5.0/24', '10.0.5.*', '10.1.0.9/32', '10.0.0.0/16'],
+        extraSubnets: ['10.0.5.0/24', '10.0.5.*', '10.1.0.9/32', '10.0.0.0/16'],
         peerIps: ['100.64.0.9', 'not-an-ip', '10.1.0.9'],
         interfaces: [
           _iface('wg0', ['10.9.0.2'], multicast: false),
           _iface('tailscale0', ['100.64.0.5'], multicast: false),
         ],
       );
-      expect(plan.subnetSeeds, ['10.0.5.0', '10.9.0.2']);
+      expect(plan.subnetSeeds, ['10.9.0.2']);
       expect(plan.peerIps.toSet(), {'100.64.0.9', '10.1.0.9'});
-      expect(plan.invalidSubnets, ['10.0.0.0/16']);
+      expect(plan.invalidSubnets, ['10.0.5.0/24', '10.0.5.*', '10.0.0.0/16']);
       expect(plan.tailnet, isTrue);
     });
 
@@ -98,18 +122,22 @@ void main() {
       expect(plan.peerIps, hasLength(maxPeerIpsPerScan));
     });
 
-    test('caps extra subnets at 16 entries and 4096 hosts', () {
-      final many = [for (var i = 0; i < 20; i++) '10.$i.0.0/24'];
+    test('caps extra subnets at 16 entries and 96 direct probe targets', () {
+      final many = [for (var i = 0; i < 20; i++) '10.$i.0.1/32'];
       final plan = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: many, peerIps: []);
-      expect(plan.subnetSeeds, hasLength(maxExtraSubnetEntries));
+      expect(plan.peerIps, hasLength(maxExtraSubnetEntries));
       expect(plan.invalidSubnets, many.sublist(16));
 
-      // 16 entries of at most a /24 stay within the 4096-host budget.
-      final mixed = [for (var i = 0; i < 15; i++) '10.$i.0.0/24', '10.98.0.128/26'];
-      final plan2 = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: mixed, peerIps: []);
-      expect(plan2.invalidSubnets, isEmpty);
-      expect(plan2.subnetSeeds, hasLength(15));
-      expect(plan2.peerIps, hasLength(62));
+      // One /26 (62) plus 32 peer IPs = 94 fit; a second /26 does not.
+      final plan2 = buildExtraScanPlan(
+        localIps: [],
+        bindInterfaces: [],
+        extraSubnets: ['10.98.0.0/26', '10.99.0.0/26'],
+        peerIps: [for (var i = 0; i < 32; i++) '10.0.0.$i'],
+      );
+      expect(plan2.peerIps, hasLength(94));
+      expect(plan2.peerIps.length, lessThanOrEqualTo(maxDirectProbeTargets));
+      expect(plan2.invalidSubnets, ['10.99.0.0/26']);
     });
 
     test('acceptance (no CLI): an IP entered once is probed on every later scan', () {
@@ -122,11 +150,11 @@ void main() {
       final plan = buildExtraScanPlan(
         localIps: const [],
         bindInterfaces: const [],
-        extraSubnets: const ['10.1.0.0/25'],
+        extraSubnets: const ['10.1.0.0/26', '10.2.0.0/26'],
         peerIps: const [],
       );
-      expect(plan.peerIps, isEmpty);
-      expect(plan.invalidSubnets, ['10.1.0.0/25']);
+      expect(plan.peerIps, hasLength(62));
+      expect(plan.invalidSubnets, ['10.2.0.0/26']);
     });
   });
 }

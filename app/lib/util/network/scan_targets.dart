@@ -2,48 +2,47 @@ import 'dart:io' show InternetAddress, InternetAddressType;
 
 import 'package:localsend_isolates/rust/api/diagnostics.dart';
 
-/// Largest subnet (smallest prefix length) accepted per `extraSubnets` entry.
-/// The design note caps an entry at a /24 for the MVP.
-const minExtraSubnetPrefix = 24;
+/// Largest subnet (smallest prefix length) accepted per `extraSubnets` entry:
+/// a /26 (64 addresses), so a scan stays within [maxDirectProbeTargets].
+/// Same rule as the UI validator (`subnet_validator.dart`) and the docs.
+const minExtraSubnetPrefix = 26;
 
 /// At most this many `extraSubnets` entries are used per scan.
 const maxExtraSubnetEntries = 16;
 
-/// At most this many hosts (a /24 counts as 256) are scanned from
-/// `extraSubnets` per scan.
+/// Upper bound on hosts from `extraSubnets` per scan. In practice the tighter
+/// [maxDirectProbeTargets] applies, since every extra subnet host is probed
+/// directly.
 const maxExtraSubnetHosts = 4096;
 
 /// At most this many entered `peerIps` are probed per scan.
 const maxPeerIpsPerScan = 32;
 
 /// Maximum IPs sent to `probePeers` in one scan (entered peer IPs plus hosts
-/// of /25-/32 extra subnets). Matches `MAX_PROBE_TARGETS` in Rust.
+/// of /26-/32 extra subnets). Matches `MAX_PROBE_TARGETS` in Rust.
 const maxDirectProbeTargets = 96;
 
 /// A validated `extraSubnets` entry.
 class ExtraSubnet {
-  /// An address inside each /24 to scan (the scan covers the whole /24).
+  /// An address inside each /24 to scan. Always empty for extra subnets
+  /// since the /26 cap (kept for the plan's non-multicast interface seeds).
   final List<String> subnetSeeds;
 
-  /// Single hosts to probe directly (prefixes longer than /24).
+  /// Single hosts to probe directly.
   final List<String> hosts;
 
   const ExtraSubnet({required this.subnetSeeds, required this.hosts});
 }
 
-/// Parses an `extraSubnets` entry: IPv4 CIDR (`10.0.5.0/24`, `10.0.5.7/32`),
-/// `a.b.c.*`, or a bare IPv4 address (= /32).
-/// Returns `null` for invalid entries and for anything larger than a /24.
+/// Parses an `extraSubnets` entry: IPv4 CIDR from /26 to /32
+/// (`10.0.5.0/26`, `10.0.5.7/32`) or a bare IPv4 address (= /32).
+/// Returns `null` for invalid entries, `a.b.c.*` and anything larger than a
+/// /26, matching the UI validator.
 ExtraSubnet? parseExtraSubnet(String input) {
   final entry = input.trim();
   if (entry.isEmpty) {
     return null;
   }
-  if (entry.endsWith('.*')) {
-    final base = _parseIpv4('${entry.substring(0, entry.length - 2)}.0');
-    return base == null ? null : ExtraSubnet(subnetSeeds: [_fmt(base)], hosts: const []);
-  }
-
   final parts = entry.split('/');
   if (parts.length > 2) {
     return null;
@@ -55,9 +54,6 @@ ExtraSubnet? parseExtraSubnet(String input) {
   final prefix = parts.length == 2 ? int.tryParse(parts[1]) : 32;
   if (prefix == null || prefix < minExtraSubnetPrefix || prefix > 32) {
     return null;
-  }
-  if (prefix == 24) {
-    return ExtraSubnet(subnetSeeds: [_fmt(ip & 0xFFFFFF00)], hosts: const []);
   }
   final mask = prefix == 32 ? 0xFFFFFFFF : (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF;
   final network = ip & mask;
