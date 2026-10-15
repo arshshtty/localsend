@@ -183,6 +183,29 @@ pub(crate) fn collect_interfaces(source: &dyn InterfaceSource) -> Vec<InterfaceD
         .collect()
 }
 
+/// Lists the interfaces without joining multicast groups or probing ports.
+pub(crate) fn list_interfaces(source: &dyn InterfaceSource) -> Vec<InterfaceDiag> {
+    match source.interfaces() {
+        Ok(raw) => raw
+            .into_iter()
+            .map(|iface| InterfaceDiag {
+                name: iface.name,
+                index: iface.index,
+                addresses: iface.addresses.iter().map(IpAddr::to_string).collect(),
+                up: iface.up,
+                loopback: iface.loopback,
+                multicast_capable: iface.multicast_capable,
+                join_v4: JoinResult::NotAttempted,
+                join_v6: JoinResult::NotAttempted,
+            })
+            .collect(),
+        Err(e) => {
+            tracing::warn!("Listing network interfaces failed: {e}");
+            Vec::new()
+        }
+    }
+}
+
 /// TCP bind probe on the wildcard address, like the HTTP server does.
 pub(crate) fn probe_tcp(port: u16) -> PortStatus {
     match std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) {
@@ -479,6 +502,22 @@ mod tests {
         assert_eq!(by("v6only").join_v4, JoinResult::NotAttempted);
         assert_eq!(by("v6only").join_v6, JoinResult::Ok);
         assert_eq!(source.v4_calls.get(), 2);
+    }
+
+    #[test]
+    fn list_interfaces_never_joins() {
+        let source = FakeSource {
+            ifaces: vec![
+                raw("eth0", "192.168.1.2", true, true),
+                raw("wg0", "10.9.0.2", true, false),
+            ],
+            v4_calls: Cell::new(0),
+        };
+        let list = list_interfaces(&source);
+        assert_eq!(list.len(), 2);
+        assert!(list.iter().all(|i| i.join_v4 == JoinResult::NotAttempted));
+        assert!(!list[1].multicast_capable);
+        assert_eq!(source.v4_calls.get(), 0);
     }
 
     #[test]

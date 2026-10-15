@@ -18,13 +18,82 @@ const peerProbeTimeoutMs = 500;
 class ScanNetworkProbes {
   const ScanNetworkProbes();
 
-  Future<rust_diag.Diagnostics> runDiagnostics({required int port}) => rust_diag.runDiagnostics(port: port);
+  /// Cheap interface list (no joins, no port probes).
+  Future<List<rust_diag.InterfaceDiag>> listInterfaces() => rust_diag.listInterfaces();
 
   Future<List<rust_diag.PeerProbeResult>> probePeers({required List<String> peerIps, required int port, required int timeoutMs}) =>
       rust_diag.probePeers(peerIps: peerIps, port: port, timeoutMs: timeoutMs);
+
+  Future<List<rust_diag.PeerProbeResult>> probeTailscalePeers({required int port, required int timeoutMs}) =>
+      rust_diag.probeTailscalePeers(port: port, timeoutMs: timeoutMs);
 }
 
 final scanNetworkProbesProvider = Provider<ScanNetworkProbes>((ref) => const ScanNetworkProbes());
+
+/// Scans what multicast cannot reach, on top of the regular staged scan:
+/// - the valid `extraSubnets` (only when the list is non-empty);
+/// - the subnets of picked `bindInterfaces` that cannot carry multicast;
+/// - the entered `peerIps` (max 32) and hosts of small extra subnets;
+/// - Tailscale CLI peers, only when a `tailscale*` interface is picked.
+///
+/// With default settings (all three lists empty) nothing is called, so the
+/// smart scan behaves exactly like before.
+Future<ExtraScanPlan> runSmartScanExtras({
+  required ScanNetworkProbes probes,
+  required List<String> localIps,
+  required List<String> bindInterfaces,
+  required List<String> extraSubnets,
+  required List<String> peerIps,
+  required int port,
+  required Future<void> Function(String seed) scanSubnet,
+  required Future<void> Function(List<(String, int)> peers) registerPeers,
+}) async {
+  var plan = buildExtraScanPlan(localIps: localIps, bindInterfaces: bindInterfaces, extraSubnets: extraSubnets, peerIps: peerIps);
+  if (plan.isEmpty) {
+    return plan;
+  }
+  if (plan.invalidSubnets.isNotEmpty) {
+    _logger.warning('Ignoring invalid or over-cap extra subnets: ${plan.invalidSubnets}');
+  }
+  if (plan.needsInterfaces) {
+    try {
+      final interfaces = await probes.listInterfaces();
+      plan = buildExtraScanPlan(
+        localIps: localIps,
+        bindInterfaces: bindInterfaces,
+        extraSubnets: extraSubnets,
+        peerIps: peerIps,
+        interfaces: interfaces,
+      );
+    } catch (e) {
+      _logger.warning('Listing network interfaces failed', e);
+    }
+  }
+
+  Future<void> probe(Future<List<rust_diag.PeerProbeResult>> Function() run) async {
+    final List<rust_diag.PeerProbeResult> results;
+    try {
+      results = await run();
+    } catch (e) {
+      _logger.warning('Peer probe failed', e);
+      return;
+    }
+    final reachable = [
+      for (final r in results)
+        if (r.reachable) (r.ip, r.port),
+    ];
+    if (reachable.isNotEmpty) {
+      await registerPeers(reachable);
+    }
+  }
+
+  await Future.wait<void>([
+    for (final seed in plan.subnetSeeds) scanSubnet(seed),
+    if (plan.peerIps.isNotEmpty) probe(() => probes.probePeers(peerIps: plan.peerIps, port: port, timeoutMs: peerProbeTimeoutMs)),
+    if (plan.tailnet) probe(() => probes.probeTailscalePeers(port: port, timeoutMs: peerProbeTimeoutMs)),
+  ]);
+  return plan;
+}
 
 /// Discovers devices in stages, cheapest first: multicast announcement and
 /// favorite probes right away, http-based discovery on the subnets only when
@@ -56,66 +125,32 @@ class StartSmartScan extends AsyncGlobalAction {
     ]);
   }
 
-  /// Scans what multicast cannot reach: the `extraSubnets`, the subnets of
-  /// interfaces that cannot carry multicast, and peers (Tailscale CLI on
-  /// desktop, entered `peerIps`) for /32 or tailnet links.
   Future<void> _scanExtras(List<String> localIps) async {
     final settings = ref.read(settingsProvider);
-    final probes = ref.read(scanNetworkProbesProvider);
-
-    rust_diag.Diagnostics? diagnostics;
-    try {
-      diagnostics = await probes.runDiagnostics(port: settings.port);
-    } catch (e) {
-      _logger.warning('Network diagnostics failed', e);
-    }
-
-    final plan = buildExtraScanPlan(
+    await runSmartScanExtras(
+      probes: ref.read(scanNetworkProbesProvider),
       localIps: localIps,
+      bindInterfaces: settings.bindInterfaces,
       extraSubnets: settings.extraSubnets,
       peerIps: settings.peerIps,
-      diagnostics: diagnostics,
-    );
-    if (plan.invalidSubnets.isNotEmpty) {
-      _logger.warning('Ignoring invalid extra subnets: ${plan.invalidSubnets}');
-    }
-
-    await Future.wait<void>([
-      for (final seed in plan.subnetSeeds)
-        ref.redux(nearbyDevicesProvider).dispatchAsync(StartLegacyScan(port: settings.port, localIp: seed, https: settings.https)),
-      _probePeers(probes, plan.peerIps, settings.port, settings.https),
-    ]);
-  }
-
-  Future<void> _probePeers(ScanNetworkProbes probes, List<String> peerIps, int port, bool https) async {
-    final List<rust_diag.PeerProbeResult> results;
-    try {
-      results = await probes.probePeers(peerIps: peerIps, port: port, timeoutMs: peerProbeTimeoutMs);
-    } catch (e) {
-      _logger.warning('Peer probe failed', e);
-      return;
-    }
-    final reachable = [
-      for (final r in results)
-        if (r.reachable) (r.ip, r.port),
-    ];
-    if (reachable.isEmpty) {
-      return;
-    }
-    // Register the reachable peers through the regular channel probe so they
-    // show up like any other nearby device.
-    await ref
-        .redux(nearbyDevicesProvider)
-        .dispatchAsync(
-          StartStagedScan(
-            favorites: const [],
-            peers: reachable,
-            interfaces: const [],
-            port: port,
-            https: https,
-            grace: Duration.zero,
+      port: settings.port,
+      scanSubnet: (seed) =>
+          ref.redux(nearbyDevicesProvider).dispatchAsync(StartLegacyScan(port: settings.port, localIp: seed, https: settings.https)),
+      // Register the reachable peers through the regular channel probe so
+      // they show up like any other nearby device.
+      registerPeers: (peers) => ref
+          .redux(nearbyDevicesProvider)
+          .dispatchAsync(
+            StartStagedScan(
+              favorites: const [],
+              peers: peers,
+              interfaces: const [],
+              port: settings.port,
+              https: settings.https,
+              grace: Duration.zero,
+            ),
           ),
-        );
+    );
   }
 }
 

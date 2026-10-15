@@ -4,7 +4,10 @@
 //! - desktop with the `tailscale` CLI: online peers from `tailscale status --json`;
 //! - IPs the user entered (`peerIps` setting), on every platform.
 //!
-//! Each peer is probed concurrently via `GET /api/localsend/v2/info` (HTTPS and
+//! The CLI is only used when the caller asks for it (the app does so only
+//! when the user picked a `tailscale*` interface).
+//!
+//! Each peer is probed concurrently (at most 16 at a time, one shared client) via `GET /api/localsend/v2/info` (HTTPS and
 //! HTTP in parallel) with a per-peer timeout. A missing or failing CLI is not
 //! an error: it just contributes no peers.
 
@@ -14,7 +17,9 @@ use localsend::model::discovery::ProtocolType;
 use std::future::Future;
 use std::net::IpAddr;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 
 /// How long the `tailscale status --json` call may take.
 const CLI_TIMEOUT: Duration = Duration::from_secs(2);
@@ -101,15 +106,25 @@ pub(crate) fn parse_tailscale_peers(json: &str) -> Vec<String> {
     ips
 }
 
+/// At most this many probes run at the same time.
+pub(crate) const MAX_CONCURRENT_PROBES: usize = 16;
+
+/// At most this many Tailscale CLI peers are probed per scan.
+pub(crate) const MAX_TAILNET_PEERS: usize = 64;
+
+/// At most this many explicit targets (entered peer IPs plus small extra
+/// subnets, capped further on the Dart side) are probed per call.
+pub(crate) const MAX_PROBE_TARGETS: usize = 4096 + 32;
+
 /// Probes one peer: reachable when a LocalSend `info` endpoint answers.
 async fn probe_one(
+    client: Arc<LsHttpClientV2>,
     ip: String,
     port: u16,
     source: PeerSource,
     timeout: Duration,
 ) -> PeerProbeResult {
     let result = tokio::time::timeout(timeout, async {
-        let client = LsHttpClientV2::try_new_without_cert().map_err(|e| format!("{e:?}"))?;
         let https = client.info(ProtocolType::Https, &ip, port);
         let http = client.info(ProtocolType::Http, &ip, port);
         tokio::pin!(https, http);
@@ -153,19 +168,70 @@ async fn probe_one(
     }
 }
 
-pub(crate) async fn probe_peers_with(
-    tailscale: &dyn TailscaleStatus,
+/// Runs `f` for every target with at most `max_concurrent` in flight,
+/// returning the results in target order.
+pub(crate) async fn run_bounded<T, R, F, Fut>(
+    targets: Vec<T>,
+    max_concurrent: usize,
+    f: F,
+) -> Vec<R>
+where
+    T: Send + 'static,
+    R: Send + 'static,
+    F: Fn(T) -> Fut,
+    Fut: Future<Output = R> + Send + 'static,
+{
+    let semaphore = Arc::new(Semaphore::new(max_concurrent.max(1)));
+    let mut handles = Vec::with_capacity(targets.len());
+    for target in targets {
+        let fut = f(target);
+        let semaphore = semaphore.clone();
+        handles.push(tokio::spawn(async move {
+            let _permit = semaphore.acquire_owned().await.ok()?;
+            Some(fut.await)
+        }));
+    }
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        if let Ok(Some(result)) = handle.await {
+            results.push(result);
+        }
+    }
+    results
+}
+
+/// Probes `targets` with one shared HTTP client and bounded concurrency.
+async fn probe_targets(
+    targets: Vec<(String, PeerSource)>,
+    port: u16,
+    timeout_ms: u32,
+) -> Vec<PeerProbeResult> {
+    if targets.is_empty() {
+        return Vec::new();
+    }
+    let timeout = Duration::from_millis(u64::from(timeout_ms.max(1)));
+    let client = match LsHttpClientV2::try_new_without_cert() {
+        Ok(client) => Arc::new(client),
+        Err(e) => {
+            tracing::warn!("Could not create the probe HTTP client: {e:?}");
+            return Vec::new();
+        }
+    };
+    run_bounded(targets, MAX_CONCURRENT_PROBES, move |(ip, source)| {
+        probe_one(client.clone(), ip, port, source, timeout)
+    })
+    .await
+}
+
+/// Probes explicit IPs (entered peer IPs, small extra subnets) with source
+/// `UserEntered`. Never runs the Tailscale CLI. Invalid IPs are skipped,
+/// duplicates probed once, and at most [MAX_PROBE_TARGETS] are probed.
+pub(crate) async fn probe_ips(
     peer_ips: Vec<String>,
     port: u16,
     timeout_ms: u32,
 ) -> Vec<PeerProbeResult> {
-    let timeout = Duration::from_millis(u64::from(timeout_ms.max(1)));
     let mut targets: Vec<(String, PeerSource)> = Vec::new();
-    if let Some(json) = tailscale.status_json().await {
-        for ip in parse_tailscale_peers(&json) {
-            targets.push((ip, PeerSource::TailscaleCli));
-        }
-    }
     for ip in peer_ips {
         let ip = ip.trim().to_string();
         if ip.parse::<IpAddr>().is_err() {
@@ -176,30 +242,64 @@ pub(crate) async fn probe_peers_with(
             targets.push((ip, PeerSource::UserEntered));
         }
     }
-    let probes = targets
+    targets.truncate(MAX_PROBE_TARGETS);
+    probe_targets(targets, port, timeout_ms).await
+}
+
+/// Probes the online peers listed by `tailscale status --json` (at most
+/// [MAX_TAILNET_PEERS]) with source `TailscaleCli`. A missing or failing CLI
+/// yields no results.
+pub(crate) async fn probe_tailscale_with(
+    tailscale: &dyn TailscaleStatus,
+    port: u16,
+    timeout_ms: u32,
+) -> Vec<PeerProbeResult> {
+    let Some(json) = tailscale.status_json().await else {
+        return Vec::new();
+    };
+    let mut peers = parse_tailscale_peers(&json);
+    peers.truncate(MAX_TAILNET_PEERS);
+    let targets = peers
         .into_iter()
-        .map(|(ip, source)| tokio::spawn(probe_one(ip, port, source, timeout)));
-    let mut results = Vec::new();
-    for probe in probes.collect::<Vec<_>>() {
-        if let Ok(result) = probe.await {
-            results.push(result);
-        }
-    }
-    results
+        .map(|ip| (ip, PeerSource::TailscaleCli))
+        .collect();
+    probe_targets(targets, port, timeout_ms).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     const FIXTURE: &str = include_str!("../tests/fixtures/tailscale_status.json");
 
-    struct FakeTailscale(Option<String>);
+    struct FakeTailscale {
+        json: Option<String>,
+        calls: AtomicUsize,
+    }
+
+    impl FakeTailscale {
+        fn new(json: Option<&str>) -> Self {
+            Self {
+                json: json.map(str::to_string),
+                calls: AtomicUsize::new(0),
+            }
+        }
+    }
 
     impl TailscaleStatus for FakeTailscale {
         fn status_json(&self) -> Pin<Box<dyn Future<Output = Option<String>> + Send + '_>> {
-            Box::pin(async move { self.0.clone() })
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move { self.json.clone() })
         }
+    }
+
+    fn free_port() -> u16 {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port()
     }
 
     #[test]
@@ -243,18 +343,13 @@ mod tests {
         (handle, stop_tx)
     }
 
-    /// Acceptance (desktop + CLI): an online tailnet peer is found without
-    /// the user typing its IP.
+    /// Acceptance (desktop + CLI, tailscale interface picked): an online
+    /// tailnet peer is found without the user typing its IP.
     #[tokio::test]
     async fn cli_peer_is_found_without_entered_ip() {
         let (server, _stop) = start_test_server("Tailnet Peer").await;
-        let results = probe_peers_with(
-            &FakeTailscale(Some(FIXTURE.into())),
-            vec![],
-            server.port(),
-            2000,
-        )
-        .await;
+        let cli = FakeTailscale::new(Some(FIXTURE));
+        let results = probe_tailscale_with(&cli, server.port(), 2000).await;
         assert_eq!(results.len(), 1, "{results:?}");
         let r = &results[0];
         assert_eq!(r.ip, "127.0.0.1");
@@ -264,14 +359,18 @@ mod tests {
         assert_eq!(r.fingerprint.as_deref(), Some("fingerprint"));
     }
 
-    /// Acceptance (no CLI): a missing CLI falls back quietly; the entered IP
-    /// is probed and found.
+    /// Acceptance (no CLI): a missing CLI yields nothing; the entered IP is
+    /// probed and found.
     #[tokio::test]
     async fn without_cli_entered_ip_is_found() {
         let (server, _stop) = start_test_server("Entered Peer").await;
-        let results = probe_peers_with(
-            &FakeTailscale(None),
-            vec!["127.0.0.1".into(), "bogus".into()],
+        assert!(
+            probe_tailscale_with(&FakeTailscale::new(None), server.port(), 2000)
+                .await
+                .is_empty()
+        );
+        let results = probe_ips(
+            vec!["127.0.0.1".into(), "bogus".into(), "127.0.0.1".into()],
             server.port(),
             2000,
         )
@@ -284,39 +383,63 @@ mod tests {
 
     #[tokio::test]
     async fn unreachable_peer_reports_error() {
-        // Grab a free port and close it again so nothing listens there.
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let results = probe_peers_with(
-            &FakeTailscale(Some("garbage".into())),
-            vec!["127.0.0.1".into()],
-            port,
-            500,
-        )
-        .await;
+        let results = probe_ips(vec!["127.0.0.1".into()], free_port(), 500).await;
         assert_eq!(results.len(), 1);
         assert!(!results[0].reachable);
         assert!(results[0].error.is_some());
     }
 
     #[tokio::test]
-    async fn duplicate_ip_is_probed_once() {
-        let port = std::net::TcpListener::bind("127.0.0.1:0")
-            .unwrap()
-            .local_addr()
-            .unwrap()
-            .port();
-        let results = probe_peers_with(
-            &FakeTailscale(Some(FIXTURE.into())),
-            vec!["127.0.0.1".into()],
-            port,
-            300,
-        )
+    async fn no_targets_probe_nothing() {
+        assert!(probe_ips(vec![], 53317, 500).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn concurrency_is_bounded() {
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+        let results = run_bounded((0..100).collect(), MAX_CONCURRENT_PROBES, |i: u32| {
+            let in_flight = in_flight.clone();
+            let peak = peak.clone();
+            async move {
+                let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+                peak.fetch_max(now, Ordering::SeqCst);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                in_flight.fetch_sub(1, Ordering::SeqCst);
+                i
+            }
+        })
         .await;
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].source, PeerSource::TailscaleCli);
+        assert_eq!(results, (0..100).collect::<Vec<_>>());
+        let peak = peak.load(Ordering::SeqCst);
+        assert!(peak <= MAX_CONCURRENT_PROBES, "peak {peak}");
+        assert!(peak > 1, "probes should overlap");
+    }
+
+    #[tokio::test]
+    async fn tailnet_peers_are_capped() {
+        let peers: Vec<String> = (0..200)
+            .map(|i| {
+                format!(
+                    r#""n{i}": {{"Online": true, "TailscaleIPs": ["127.0.{}.{}"]}}"#,
+                    i / 250,
+                    i % 250 + 1
+                )
+            })
+            .collect();
+        let json = format!(r#"{{"Peer": {{{}}}}}"#, peers.join(","));
+        assert_eq!(parse_tailscale_peers(&json).len(), 200);
+        let results =
+            probe_tailscale_with(&FakeTailscale::new(Some(&json)), free_port(), 200).await;
+        assert_eq!(results.len(), MAX_TAILNET_PEERS);
+    }
+
+    #[tokio::test]
+    async fn explicit_targets_are_capped() {
+        let ips: Vec<String> = (0..(MAX_PROBE_TARGETS + 50))
+            .map(|i| format!("127.{}.{}.{}", (i >> 16) & 0xff, (i >> 8) & 0xff, i & 0xff))
+            .collect();
+        let results = probe_ips(ips, free_port(), 50).await;
+        assert_eq!(results.len(), MAX_PROBE_TARGETS);
     }
 }

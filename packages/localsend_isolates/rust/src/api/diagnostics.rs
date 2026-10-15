@@ -122,13 +122,13 @@ pub async fn run_diagnostics(port: u16) -> Diagnostics {
     })
 }
 
-/// Probes LocalSend peers on `port`, concurrently, each within `timeout_ms`.
+/// Probes explicit peer IPs on `port` (source `UserEntered`): the
+/// user-entered `peerIps` and hosts of small extra subnets.
 ///
-/// - Desktop with the `tailscale` CLI: online peers from
-///   `tailscale status --json` (source `TailscaleCli`). A missing or failing
-///   CLI quietly contributes nothing.
-/// - Always: the user-entered `peer_ips` (source `UserEntered`); invalid IPs
-///   are skipped, duplicates of CLI peers are probed once.
+/// Never runs the Tailscale CLI (see [probe_tailscale_peers]). Invalid IPs
+/// are skipped, duplicates probed once; at most 16 probes run at a time,
+/// each within `timeout_ms`, with one shared HTTP client. The app caps
+/// entered peer IPs at 32 per scan.
 ///
 /// A peer is `reachable` when its LocalSend `info` endpoint answers (HTTPS or HTTP).
 pub async fn probe_peers(
@@ -136,13 +136,30 @@ pub async fn probe_peers(
     port: u16,
     timeout_ms: u32,
 ) -> Vec<PeerProbeResult> {
-    crate::peer_probe::probe_peers_with(
-        &crate::peer_probe::SystemTailscale,
-        peer_ips,
-        port,
-        timeout_ms,
-    )
+    crate::peer_probe::probe_ips(peer_ips, port, timeout_ms).await
+}
+
+/// Probes the online peers from `tailscale status --json` on `port`
+/// (source `TailscaleCli`, at most 64 peers, 16 at a time).
+///
+/// Desktop only; a missing or failing CLI quietly returns an empty list.
+/// The app calls this only when the user picked a `tailscale*` interface
+/// in `bindInterfaces`.
+pub async fn probe_tailscale_peers(port: u16, timeout_ms: u32) -> Vec<PeerProbeResult> {
+    crate::peer_probe::probe_tailscale_with(&crate::peer_probe::SystemTailscale, port, timeout_ms)
+        .await
+}
+
+/// Lists the network interfaces cheaply: names, addresses and flags only.
+///
+/// Unlike [run_diagnostics], no multicast joins are attempted (both join
+/// results are `NotAttempted`) and no ports are probed.
+pub async fn list_interfaces() -> Vec<InterfaceDiag> {
+    tokio::task::spawn_blocking(|| {
+        crate::diagnostics_impl::list_interfaces(&crate::diagnostics_impl::SystemInterfaceSource)
+    })
     .await
+    .unwrap_or_default()
 }
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).

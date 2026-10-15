@@ -6,6 +6,16 @@ import 'package:localsend_isolates/rust/api/diagnostics.dart';
 /// The design note caps an entry at a /24 for the MVP.
 const minExtraSubnetPrefix = 24;
 
+/// At most this many `extraSubnets` entries are used per scan.
+const maxExtraSubnetEntries = 16;
+
+/// At most this many hosts (a /24 counts as 256) are scanned from
+/// `extraSubnets` per scan.
+const maxExtraSubnetHosts = 4096;
+
+/// At most this many entered `peerIps` are probed per scan.
+const maxPeerIpsPerScan = 32;
+
 /// A validated `extraSubnets` entry.
 class ExtraSubnet {
   /// An address inside each /24 to scan (the scan covers the whole /24).
@@ -65,13 +75,17 @@ bool isTailnetAddress(String ip) {
   return ip.toLowerCase().startsWith('fd7a:115c:a1e0:');
 }
 
-/// IPv4 addresses of up, non-loopback interfaces that cannot carry multicast,
-/// whose /24 must be scanned instead. Tailnet addresses are excluded: their
-/// peers are found through [probePeers] (Tailscale CLI or entered peer IPs).
-List<String> nonMulticastSubnetSeeds(Diagnostics diagnostics) {
+/// Whether [bindInterfaces] contains a Tailscale interface (`tailscale*`).
+/// Only then may the scan run the Tailscale CLI and probe tailnet peers.
+bool wantsTailnet(List<String> bindInterfaces) => bindInterfaces.any((name) => name.startsWith('tailscale'));
+
+/// IPv4 addresses of the up, non-loopback interfaces in [bindInterfaces]
+/// that cannot carry multicast, whose /24 must be scanned instead. Tailnet
+/// addresses are excluded: their peers come from the peer probes.
+List<String> nonMulticastSubnetSeeds(List<InterfaceDiag> interfaces, List<String> bindInterfaces) {
   return [
-    for (final iface in diagnostics.interfaces)
-      if (iface.up && !iface.loopback && !iface.multicastCapable)
+    for (final iface in interfaces)
+      if (bindInterfaces.contains(iface.name) && iface.up && !iface.loopback && !iface.multicastCapable)
         for (final address in iface.addresses)
           if (_parseIpv4(address) != null && !isTailnetAddress(address)) address,
   ];
@@ -82,26 +96,48 @@ class ExtraScanPlan {
   /// Seeds whose /24 is scanned unconditionally.
   final List<String> subnetSeeds;
 
-  /// IPs to probe directly via [probePeers] (entered peer IPs + small extra subnets).
+  /// IPs probed directly via `probePeers`: entered peer IPs (max
+  /// [maxPeerIpsPerScan]) and hosts of /25-/32 extra subnets.
   final List<String> peerIps;
 
-  /// `extraSubnets` entries that were rejected.
+  /// Whether the Tailscale CLI peers are probed (a `tailscale*` interface is picked).
+  final bool tailnet;
+
+  /// Whether the cheap interface list is needed (some interfaces are picked).
+  final bool needsInterfaces;
+
+  /// `extraSubnets` entries that were rejected or over the caps.
   final List<String> invalidSubnets;
 
-  const ExtraScanPlan({required this.subnetSeeds, required this.peerIps, required this.invalidSubnets});
+  const ExtraScanPlan({
+    required this.subnetSeeds,
+    required this.peerIps,
+    required this.tailnet,
+    required this.needsInterfaces,
+    required this.invalidSubnets,
+  });
+
+  /// Nothing to do beyond the regular scan (default settings).
+  bool get isEmpty => subnetSeeds.isEmpty && peerIps.isEmpty && !tailnet && !needsInterfaces;
 }
 
-/// Combines the settings and diagnostics into the extra scan targets.
-/// Subnets already covered by [localIps] are not scanned twice.
+/// Combines the settings (and, when interfaces are picked, the interface
+/// list) into the extra scan targets. With empty [bindInterfaces],
+/// [extraSubnets] and [peerIps] the plan is empty, so the scan behaves
+/// exactly like before. Subnets already covered by [localIps] are not
+/// scanned twice.
 ExtraScanPlan buildExtraScanPlan({
   required List<String> localIps,
+  required List<String> bindInterfaces,
   required List<String> extraSubnets,
   required List<String> peerIps,
-  Diagnostics? diagnostics,
+  List<InterfaceDiag>? interfaces,
 }) {
   final covered = localIps.map(_subnetKey).whereType<String>().toSet();
   final seeds = <String>[];
-  final hosts = <String>{...peerIps.map((e) => e.trim()).where((e) => InternetAddress.tryParse(e) != null)};
+  final hosts = <String>{
+    ...peerIps.map((e) => e.trim()).where((e) => InternetAddress.tryParse(e) != null).take(maxPeerIpsPerScan),
+  };
   final invalid = <String>[];
 
   void addSeed(String seed) {
@@ -111,19 +147,28 @@ ExtraScanPlan buildExtraScanPlan({
     }
   }
 
-  for (final entry in extraSubnets) {
-    final parsed = parseExtraSubnet(entry);
-    if (parsed == null) {
+  var budget = maxExtraSubnetHosts;
+  for (final (i, entry) in extraSubnets.indexed) {
+    final parsed = i < maxExtraSubnetEntries ? parseExtraSubnet(entry) : null;
+    final cost = parsed == null ? 0 : parsed.subnetSeeds.length * 256 + parsed.hosts.length;
+    if (parsed == null || cost > budget) {
       invalid.add(entry);
       continue;
     }
+    budget -= cost;
     parsed.subnetSeeds.forEach(addSeed);
     hosts.addAll(parsed.hosts);
   }
-  if (diagnostics != null) {
-    nonMulticastSubnetSeeds(diagnostics).forEach(addSeed);
+  if (interfaces != null) {
+    nonMulticastSubnetSeeds(interfaces, bindInterfaces).forEach(addSeed);
   }
-  return ExtraScanPlan(subnetSeeds: seeds, peerIps: hosts.toList(), invalidSubnets: invalid);
+  return ExtraScanPlan(
+    subnetSeeds: seeds,
+    peerIps: hosts.toList(),
+    tailnet: wantsTailnet(bindInterfaces),
+    needsInterfaces: bindInterfaces.isNotEmpty,
+    invalidSubnets: invalid,
+  );
 }
 
 String? _subnetKey(String ip) {

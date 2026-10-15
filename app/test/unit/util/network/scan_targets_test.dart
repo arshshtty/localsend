@@ -13,13 +13,6 @@ InterfaceDiag _iface(String name, List<String> addresses, {bool up = true, bool 
   joinV6: const JoinResult.notAttempted(),
 );
 
-Diagnostics _diag(List<InterfaceDiag> interfaces) => Diagnostics(
-  interfaces: interfaces,
-  tcpPort: const PortStatus.free(),
-  udpPort: const PortStatus.free(),
-  isStub: false,
-);
-
 void main() {
   group('parseExtraSubnet', () {
     test('accepts /24 CIDR and a.b.c.*', () {
@@ -50,45 +43,78 @@ void main() {
     expect(isTailnetAddress('192.168.1.2'), isFalse);
   });
 
-  test('non-multicast interfaces are scanned, tailnet ones are left to peer probes', () {
-    final seeds = nonMulticastSubnetSeeds(
-      _diag([
-        _iface('eth0', ['192.168.1.2']),
-        _iface('wg0', ['10.9.0.2', 'fe80::1'], multicast: false),
-        _iface('tailscale0', ['100.64.0.5'], multicast: false),
-        _iface('down0', ['10.8.0.2'], multicast: false, up: false),
-        _iface('lo', ['127.0.0.1'], multicast: false, loopback: true),
-      ]),
-    );
-    expect(seeds, ['10.9.0.2']);
+  test('only picked non-multicast interfaces are scanned, tailnet ones are left to peer probes', () {
+    final interfaces = [
+      _iface('eth0', ['192.168.1.2']),
+      _iface('wg0', ['10.9.0.2', 'fe80::1'], multicast: false),
+      _iface('wg1', ['10.10.0.2'], multicast: false),
+      _iface('tailscale0', ['100.64.0.5'], multicast: false),
+      _iface('down0', ['10.8.0.2'], multicast: false, up: false),
+      _iface('lo', ['127.0.0.1'], multicast: false, loopback: true),
+    ];
+    expect(nonMulticastSubnetSeeds(interfaces, ['eth0', 'wg0', 'tailscale0', 'down0', 'lo']), ['10.9.0.2']);
+    expect(nonMulticastSubnetSeeds(interfaces, []), isEmpty);
+  });
+
+  test('wantsTailnet only for tailscale* interfaces', () {
+    expect(wantsTailnet([]), isFalse);
+    expect(wantsTailnet(['eth0']), isFalse);
+    expect(wantsTailnet(['eth0', 'tailscale0']), isTrue);
   });
 
   group('buildExtraScanPlan', () {
-    test('defaults add nothing', () {
-      final plan = buildExtraScanPlan(localIps: ['192.168.1.2'], extraSubnets: [], peerIps: []);
-      expect(plan.subnetSeeds, isEmpty);
-      expect(plan.peerIps, isEmpty);
-      expect(plan.invalidSubnets, isEmpty);
+    test('defaults are empty', () {
+      final plan = buildExtraScanPlan(localIps: ['192.168.1.2'], bindInterfaces: [], extraSubnets: [], peerIps: []);
+      expect(plan.isEmpty, isTrue);
+      expect(plan.tailnet, isFalse);
+      expect(plan.needsInterfaces, isFalse);
     });
 
-    test('combines extra subnets, non-multicast subnets and peer IPs without duplicates', () {
+    test('peer IPs alone do not enable the tailnet', () {
+      final plan = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: [], peerIps: ['100.64.0.9']);
+      expect(plan.tailnet, isFalse);
+      expect(plan.peerIps, ['100.64.0.9']);
+    });
+
+    test('combines extra subnets, picked non-multicast subnets and peer IPs without duplicates', () {
       final plan = buildExtraScanPlan(
         localIps: ['192.168.1.2'],
+        bindInterfaces: ['wg0', 'tailscale0'],
         extraSubnets: ['192.168.1.0/24', '10.0.5.0/24', '10.0.5.*', '10.1.0.9/32', '10.0.0.0/16'],
         peerIps: ['100.64.0.9', 'not-an-ip', '10.1.0.9'],
-        diagnostics: _diag([
+        interfaces: [
           _iface('wg0', ['10.9.0.2'], multicast: false),
           _iface('tailscale0', ['100.64.0.5'], multicast: false),
-        ]),
+        ],
       );
       expect(plan.subnetSeeds, ['10.0.5.0', '10.9.0.2']);
       expect(plan.peerIps.toSet(), {'100.64.0.9', '10.1.0.9'});
       expect(plan.invalidSubnets, ['10.0.0.0/16']);
+      expect(plan.tailnet, isTrue);
+    });
+
+    test('caps entered peer IPs at 32', () {
+      final plan = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: [], peerIps: [for (var i = 0; i < 50; i++) '10.0.0.$i']);
+      expect(plan.peerIps, hasLength(maxPeerIpsPerScan));
+    });
+
+    test('caps extra subnets at 16 entries and 4096 hosts', () {
+      final many = [for (var i = 0; i < 20; i++) '10.$i.0.0/24'];
+      final plan = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: many, peerIps: []);
+      expect(plan.subnetSeeds, hasLength(maxExtraSubnetEntries));
+      expect(plan.invalidSubnets, many.sublist(16));
+
+      // 16 entries of at most a /24 stay within the 4096-host budget.
+      final mixed = [for (var i = 0; i < 15; i++) '10.$i.0.0/24', '10.98.0.128/25'];
+      final plan2 = buildExtraScanPlan(localIps: [], bindInterfaces: [], extraSubnets: mixed, peerIps: []);
+      expect(plan2.invalidSubnets, isEmpty);
+      expect(plan2.subnetSeeds, hasLength(15));
+      expect(plan2.peerIps, hasLength(126));
     });
 
     test('acceptance (no CLI): an IP entered once is probed on every later scan', () {
       for (var scan = 0; scan < 3; scan++) {
-        final plan = buildExtraScanPlan(localIps: ['192.168.1.2'], extraSubnets: [], peerIps: ['100.64.0.9']);
+        final plan = buildExtraScanPlan(localIps: ['192.168.1.2'], bindInterfaces: [], extraSubnets: [], peerIps: ['100.64.0.9']);
         expect(plan.peerIps, ['100.64.0.9']);
       }
     });
