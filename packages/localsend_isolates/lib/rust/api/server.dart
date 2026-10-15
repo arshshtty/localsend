@@ -11,7 +11,7 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `handle_server_event`, `handle_web_event`, `recv_opt`, `resolve_file_content`, `resolve_upload_target`, `stop`
+// These functions are ignored because they are not marked as `pub`: `handle_server_event`, `handle_web_event`, `recv_opt`, `resolve_file_content`, `resolve_upload_target`, `running_server_port`, `stop`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerInstance`
 
 /// Starts the HTTP server on the given port (IPv4 and IPv6).

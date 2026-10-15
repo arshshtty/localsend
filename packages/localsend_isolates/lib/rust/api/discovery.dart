@@ -4,10 +4,11 @@
 // ignore_for_file: invalid_use_of_internal_member, unused_import, unnecessary_import
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
-// These functions are ignored because they are not marked as `pub`: `rs_device_log`, `rs_stored_device`, `stop`
+// These functions are ignored because they are not marked as `pub`: `rs_device_log`, `rs_stored_device`, `running_discovery_port`, `stop`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `DiscoveryInstance`
 
 /// Starts the discovery: binds the UDP multicast sockets on all usable
@@ -116,6 +117,11 @@ abstract class RsDiscovery implements RustOpaqueInterface {
   /// The reason the multicast sockets could not be bound, when they could
   /// not. Discovery then neither hears nor sends announcements.
   Future<String?> multicastError();
+
+  /// The typed reason the multicast sockets could not be bound, e.g.
+  /// [crate::api::diagnostics::StartError::PortInUse] or `NoInterface`.
+  /// `None` when multicast runs.
+  Future<StartError?> multicastStartError();
 
   /// Scans the `/24` subnet of the local interface address [interface_ip]
   /// by sending every other host a register request, for networks that do

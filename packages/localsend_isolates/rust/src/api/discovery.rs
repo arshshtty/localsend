@@ -115,6 +115,8 @@ pub struct RsDiscovery {
 /// its Dart owner.
 struct DiscoveryInstance {
     handle: DiscoveryHandle,
+    /// The multicast UDP port, so diagnostics can tell our own socket apart.
+    port: u16,
     stop_tx: Mutex<Option<oneshot::Sender<()>>>,
 
     /// Ends the [RsDiscovery::listen] stream on stop. The discovery event
@@ -142,6 +144,11 @@ impl DiscoveryInstance {
 /// fail the next bind); [start_discovery] stops such a leftover instance
 /// before starting again.
 static RUNNING_DISCOVERY: Mutex<Option<Arc<DiscoveryInstance>>> = Mutex::const_new(None);
+
+/// The UDP port of the running discovery, if any (for diagnostics).
+pub(crate) async fn running_discovery_port() -> Option<u16> {
+    RUNNING_DISCOVERY.lock().await.as_ref().map(|d| d.port)
+}
 
 /// Starts the discovery: binds the UDP multicast sockets on all usable
 /// network interfaces, answers announcements of other devices with an HTTP
@@ -177,10 +184,10 @@ pub async fn start_discovery(
     cert_pem: String,
     private_key_pem: String,
     timeout_ms: u64,
-) -> anyhow::Result<RsDiscovery> {
-    let group = group
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid multicast group: {group}"))?;
+) -> Result<RsDiscovery, crate::api::diagnostics::StartError> {
+    let group = group.parse().map_err(|_| {
+        crate::api::diagnostics::StartError::Other(format!("Invalid multicast group: {group}"))
+    })?;
 
     // Stop a discovery left over from before a hot restart (its Dart owner
     // died without calling stop)
@@ -225,6 +232,7 @@ pub async fn start_discovery(
 
     let instance = Arc::new(DiscoveryInstance {
         handle,
+        port,
         stop_tx: Mutex::new(Some(stop_tx)),
         cancel: CancellationToken::new(),
     });
@@ -294,6 +302,16 @@ impl RsDiscovery {
             .handle
             .multicast_error()
             .map(|err| format!("{err:#}"))
+    }
+
+    /// The typed reason the multicast sockets could not be bound, e.g.
+    /// [crate::api::diagnostics::StartError::PortInUse] or `NoInterface`.
+    /// `None` when multicast runs.
+    pub fn multicast_start_error(&self) -> Option<crate::api::diagnostics::StartError> {
+        self.instance
+            .handle
+            .multicast_error()
+            .map(|err| crate::diagnostics_impl::start_error_from_anyhow(err, self.instance.port))
     }
 
     /// Announces this device to the network, which makes every other LocalSend

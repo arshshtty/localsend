@@ -17,8 +17,8 @@ part 'diagnostics.freezed.dart';
 /// tries joining the LocalSend multicast group (v4/v6) on a throwaway socket
 /// per interface, and probes whether the TCP/UDP `port` can be bound.
 ///
-/// Run it while the server is stopped, or expect `tcp_port` to be `InUse`
-/// (held by this app).
+/// While this app's server (TCP) or discovery (UDP) runs on `port`, the
+/// bind probe is skipped and the status is `HeldByThisApp`.
 Future<Diagnostics> runDiagnostics({required int port}) => RustLib.instance.api.crateApiDiagnosticsRunDiagnostics(port: port);
 
 /// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.

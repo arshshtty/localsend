@@ -145,6 +145,11 @@ impl ServerInstance {
 /// binding again.
 static RUNNING_SERVER: Mutex<Option<Arc<ServerInstance>>> = Mutex::const_new(None);
 
+/// The TCP port of the running server, if any (for diagnostics).
+pub(crate) async fn running_server_port() -> Option<u16> {
+    RUNNING_SERVER.lock().await.as_ref().map(|s| s.handle.port())
+}
+
 /// Configuration for the pages served to browsers. Always part of the server
 /// configuration: even with web share disabled ([WebMode::Disabled]), the
 /// server serves the 403 page at `/`.

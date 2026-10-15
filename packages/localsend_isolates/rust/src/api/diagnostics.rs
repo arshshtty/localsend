@@ -18,7 +18,9 @@ pub enum PortStatus {
     Free,
     /// Bound by another process. `pid_hint` (e.g. `"1234 (name)"`) is
     /// best-effort; treat the process name as sensitive in any export.
-    InUse { pid_hint: Option<String> },
+    InUse {
+        pid_hint: Option<String>,
+    },
     Denied(String),
     /// Held by this app's own running server or discovery (not a conflict).
     HeldByThisApp,
@@ -101,11 +103,15 @@ pub struct PeerProbeResult {
 /// tries joining the LocalSend multicast group (v4/v6) on a throwaway socket
 /// per interface, and probes whether the TCP/UDP `port` can be bound.
 ///
-/// Run it while the server is stopped, or expect `tcp_port` to be `InUse`
-/// (held by this app).
+/// While this app's server (TCP) or discovery (UDP) runs on `port`, the
+/// bind probe is skipped and the status is `HeldByThisApp`.
 pub async fn run_diagnostics(port: u16) -> Diagnostics {
+    let own = crate::diagnostics_impl::OwnPorts {
+        tcp: crate::api::server::running_server_port().await == Some(port),
+        udp: crate::api::discovery::running_discovery_port().await == Some(port),
+    };
     tokio::task::spawn_blocking(move || {
-        crate::diagnostics_impl::run(port, &crate::diagnostics_impl::SystemInterfaceSource)
+        crate::diagnostics_impl::run(port, &crate::diagnostics_impl::SystemInterfaceSource, own)
     })
     .await
     .unwrap_or_else(|e| Diagnostics {
@@ -153,5 +159,36 @@ mod tests {
             describe_start_error(StartError::PortInUse { port: 53317 }),
             "Port 53317 is already in use"
         );
+    }
+
+    /// Our own running server must not be reported as a port conflict.
+    #[tokio::test]
+    async fn own_running_server_is_held_by_this_app() {
+        use crate::api::server::{WebMode, WebParams, start_server};
+        let server = start_server(
+            0,
+            None,
+            "diag".into(),
+            "2.1".into(),
+            None,
+            None,
+            "fingerprint".into(),
+            None,
+            false,
+            WebParams {
+                mode: WebMode::Disabled,
+                i18n: Default::default(),
+                pages: Default::default(),
+            },
+            None,
+        )
+        .await
+        .expect("server starts");
+        let port = crate::api::server::running_server_port()
+            .await
+            .expect("running");
+        let d = run_diagnostics(port).await;
+        assert_eq!(d.tcp_port, PortStatus::HeldByThisApp);
+        server.stop().await;
     }
 }

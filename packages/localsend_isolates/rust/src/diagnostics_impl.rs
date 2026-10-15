@@ -40,7 +40,11 @@ impl InterfaceSource for SystemInterfaceSource {
             let entry = by_name.entry(iface.name.clone()).or_insert_with(|| {
                 let (up, multicast) = match flags.get(&iface.name) {
                     Some(f) => (f.up, f.multicast),
-                    // No flag info (Windows): approximate.
+                    // No flag info (Windows). APPROXIMATE: Windows exposes no
+                    // multicast flag here, so "not loopback and not
+                    // point-to-point" is assumed. This wrongly reports
+                    // Wintun adapters (e.g. Tailscale, WireGuard) as
+                    // multicast-capable; the join result is authoritative.
                     None => (iface.is_oper_up(), !loopback && !iface.is_p2p()),
                 };
                 RawInterface {
@@ -193,6 +197,11 @@ pub(crate) fn probe_tcp(port: u16) -> PortStatus {
 /// UDP bind probe with the same reuse options as the multicast socket, so a
 /// running LocalSend discovery socket does not count as "in use"; only an
 /// exclusive bind by another process does.
+///
+/// Caveat: because of `SO_REUSEADDR`/`SO_REUSEPORT`, another process that
+/// also binds the port with reuse (e.g. a second LocalSend instance) is NOT
+/// detected and the result is `Free`, although both sockets then share the
+/// incoming datagrams.
 pub(crate) fn probe_udp(port: u16) -> PortStatus {
     let result = (|| -> io::Result<()> {
         let socket = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
@@ -222,6 +231,9 @@ fn port_status_from_err(e: &io::Error, port: u16, tcp: bool) -> PortStatus {
 }
 
 /// Best-effort "pid (name)" of the process holding `port`.
+///
+/// The process name is sensitive (it reveals other software on the machine):
+/// keep it on-device and redact it from any exported/shared report.
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn pid_hint(port: u16, tcp: bool) -> Option<String> {
     use std::fs;
@@ -302,11 +314,38 @@ fn pid_hint(_port: u16, _tcp: bool) -> Option<String> {
     None
 }
 
-pub(crate) fn run(port: u16, source: &dyn InterfaceSource) -> Diagnostics {
+/// Which of `port`'s sockets are held by this app's own server/discovery.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct OwnPorts {
+    pub tcp: bool,
+    pub udp: bool,
+}
+
+/// A port held by our own process is not a conflict.
+fn own_process_hint(status: PortStatus) -> PortStatus {
+    match &status {
+        PortStatus::InUse {
+            pid_hint: Some(hint),
+        } if hint.split_whitespace().next() == Some(std::process::id().to_string().as_str()) => {
+            PortStatus::HeldByThisApp
+        }
+        _ => status,
+    }
+}
+
+pub(crate) fn run(port: u16, source: &dyn InterfaceSource, own: OwnPorts) -> Diagnostics {
     Diagnostics {
         interfaces: collect_interfaces(source),
-        tcp_port: probe_tcp(port),
-        udp_port: probe_udp(port),
+        tcp_port: if own.tcp {
+            PortStatus::HeldByThisApp
+        } else {
+            own_process_hint(probe_tcp(port))
+        },
+        udp_port: if own.udp {
+            PortStatus::HeldByThisApp
+        } else {
+            own_process_hint(probe_udp(port))
+        },
         is_stub: false,
     }
 }
@@ -322,6 +361,9 @@ pub(crate) fn start_error_from_anyhow(err: &anyhow::Error, port: u16) -> StartEr
                 _ => {}
             }
         }
+    }
+    if format!("{err:#}").contains("No network interface available") {
+        return StartError::NoInterface;
     }
     // Same text the untyped error carried over the bridge before.
     StartError::Other(format!("{err:?}"))
@@ -449,6 +491,33 @@ mod tests {
         assert_eq!(
             start_error_from_anyhow(&err, 1),
             StartError::Other("boom".into())
+        );
+    }
+
+    #[test]
+    fn own_ports_are_held_by_this_app() {
+        // Even when something holds the ports, our own sockets are reported as ours.
+        let holder = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        let port = holder.local_addr().unwrap().port();
+        let fake = FakeSource {
+            ifaces: vec![],
+            v4_calls: Cell::new(0),
+        };
+        let d = run(
+            port,
+            &fake,
+            OwnPorts {
+                tcp: true,
+                udp: true,
+            },
+        );
+        assert_eq!(d.tcp_port, PortStatus::HeldByThisApp);
+        assert_eq!(d.udp_port, PortStatus::HeldByThisApp);
+        // Without the flag, the pid hint (Linux) still identifies our process.
+        #[cfg(target_os = "linux")]
+        assert_eq!(
+            run(port, &fake, OwnPorts::default()).tcp_port,
+            PortStatus::HeldByThisApp
         );
     }
 
