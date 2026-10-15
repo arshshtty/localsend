@@ -121,22 +121,23 @@ async fn probe_one(
             tokio::select! {
                 r = &mut https, if !https_done => {
                     https_done = true;
-                    match r { Ok(info) => return Ok(info.alias), Err(e) => last_err = Some(format!("{e:?}")) }
+                    match r { Ok(info) => return Ok((info.alias, info.fingerprint)), Err(e) => last_err = Some(format!("{e:?}")) }
                 }
                 r = &mut http, if !http_done => {
                     http_done = true;
-                    match r { Ok(info) => return Ok(info.alias), Err(e) => last_err = Some(format!("{e:?}")) }
+                    match r { Ok(info) => return Ok((info.alias, info.fingerprint)), Err(e) => last_err = Some(format!("{e:?}")) }
                 }
             }
         }
         Err(last_err.unwrap_or_default())
     })
     .await;
-    let (reachable, alias, error) = match result {
-        Ok(Ok(alias)) => (true, Some(alias), None),
-        Ok(Err(e)) => (false, None, Some(e)),
+    let (reachable, alias, fingerprint, error) = match result {
+        Ok(Ok((alias, fingerprint))) => (true, Some(alias), Some(fingerprint), None),
+        Ok(Err(e)) => (false, None, None, Some(e)),
         Err(_) => (
             false,
+            None,
             None,
             Some(format!("timeout after {} ms", timeout.as_millis())),
         ),
@@ -147,6 +148,7 @@ async fn probe_one(
         source,
         reachable,
         alias,
+        fingerprint,
         error,
     }
 }
@@ -259,6 +261,7 @@ mod tests {
         assert_eq!(r.source, PeerSource::TailscaleCli);
         assert!(r.reachable, "{r:?}");
         assert_eq!(r.alias.as_deref(), Some("Tailnet Peer"));
+        assert_eq!(r.fingerprint.as_deref(), Some("fingerprint"));
     }
 
     /// Acceptance (no CLI): a missing CLI falls back quietly; the entered IP
