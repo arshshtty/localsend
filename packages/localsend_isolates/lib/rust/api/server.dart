@@ -5,6 +5,7 @@
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'package:localsend_isolates/rust/api/diagnostics.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
@@ -26,6 +27,9 @@ part 'server.freezed.dart';
 /// [RsServerEvent::Show]). The token guards the endpoint against other clients.
 ///
 /// Events are received by listening to [RsHttpServer::listen].
+///
+/// Fails with a typed [crate::api::diagnostics::StartError], e.g.
+/// `PortInUse` when `port` is already bound by another process.
 Future<RsHttpServer> startServer({
   required int port,
   TlsConfig? tls,

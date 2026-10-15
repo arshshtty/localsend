@@ -3421,7 +3421,7 @@ fn wire__crate__api__server__start_server_impl(
             let api_show_token = <Option<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
-                transform_result_sse::<_, flutter_rust_bridge::for_generated::anyhow::Error>(
+                transform_result_sse::<_, crate::api::diagnostics::StartError>(
                     (move || async move {
                         let output_ok = crate::api::server::start_server(
                             api_port,

@@ -1,11 +1,8 @@
-//! Network troubleshooter contract (Troubleshooter PR 1/4: contract stub).
+//! Network troubleshooter contract.
 //!
 //! The types in this module are the Dart-facing contract for the network
-//! troubleshooter screen. The functions currently return fixed placeholder
-//! data so the UI can be built in parallel; real implementations land in
-//! later PRs (real `run_diagnostics` + `StartError::PortInUse` in 2/4,
-//! interface binding / extra subnets / peer probing in 3/4).
-
+//! troubleshooter screen. `run_diagnostics` is real (Troubleshooter 2/4);
+//! `probe_peers` is still a stub until 3/4.
 
 /// Result of trying to join the LocalSend multicast group on one interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,7 +55,7 @@ pub struct Diagnostics {
 
 /// Typed server/multicast start error.
 ///
-/// Not yet returned by `start_server` (wired in Troubleshooter PR 2/4).
+/// Returned (thrown in Dart) by `start_server` when the server cannot start.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StartError {
     PortInUse { port: u16 },
@@ -66,6 +63,14 @@ pub enum StartError {
     NoInterface,
     Other(String),
 }
+
+impl std::fmt::Display for StartError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&describe_start_error(self.clone()))
+    }
+}
+
+impl std::error::Error for StartError {}
 
 /// Where a probed peer IP came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,50 +97,39 @@ pub struct PeerProbeResult {
 
 /// Runs network diagnostics for `port`.
 ///
-/// STUB: returns fixed fake data with `is_stub = true`.
+/// Lists every interface (including ones that cannot carry multicast),
+/// tries joining the LocalSend multicast group (v4/v6) on a throwaway socket
+/// per interface, and probes whether the TCP/UDP `port` can be bound.
+///
+/// Run it while the server is stopped, or expect `tcp_port` to be `InUse`
+/// (held by this app).
 pub async fn run_diagnostics(port: u16) -> Diagnostics {
-    let _ = port;
-    Diagnostics {
-        interfaces: vec![
-            InterfaceDiag {
-                name: "stub0".to_string(),
-                index: 1,
-                addresses: vec!["192.168.1.23".to_string()],
-                up: true,
-                loopback: false,
-                multicast_capable: true,
-                join_v4: JoinResult::Ok,
-                join_v6: JoinResult::NotAttempted,
-            },
-            InterfaceDiag {
-                name: "tailscale0".to_string(),
-                index: 2,
-                addresses: vec!["100.64.0.5".to_string()],
-                up: true,
-                loopback: false,
-                multicast_capable: false,
-                join_v4: JoinResult::Failed("stub: interface does not support multicast".to_string()),
-                join_v6: JoinResult::NotAttempted,
-            },
-        ],
-        tcp_port: PortStatus::Free,
-        udp_port: PortStatus::Free,
-        is_stub: true,
-    }
+    tokio::task::spawn_blocking(move || {
+        crate::diagnostics_impl::run(port, &crate::diagnostics_impl::SystemInterfaceSource)
+    })
+    .await
+    .unwrap_or_else(|e| Diagnostics {
+        interfaces: Vec::new(),
+        tcp_port: PortStatus::Denied(format!("diagnostics failed: {e}")),
+        udp_port: PortStatus::Denied(format!("diagnostics failed: {e}")),
+        is_stub: false,
+    })
 }
 
 /// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
 ///
 /// STUB: returns an empty list. Implemented in a later PR.
-pub async fn probe_peers(peer_ips: Vec<String>, port: u16, timeout_ms: u32) -> Vec<PeerProbeResult> {
+pub async fn probe_peers(
+    peer_ips: Vec<String>,
+    port: u16,
+    timeout_ms: u32,
+) -> Vec<PeerProbeResult> {
     let _ = (peer_ips, port, timeout_ms);
     Vec::new()
 }
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).
 ///
-/// Also makes `StartError` part of the generated Dart contract ahead of
-/// Troubleshooter PR 2/4, where `start_server` starts returning it.
 #[flutter_rust_bridge::frb(sync)]
 pub fn describe_start_error(error: StartError) -> String {
     match error {
@@ -151,11 +145,13 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn stub_reports_non_multicast_interface() {
-        let d = run_diagnostics(53317).await;
-        assert!(d.is_stub);
-        assert!(d.interfaces.iter().any(|i| !i.multicast_capable));
+    async fn real_diagnostics_are_not_stub() {
+        let d = run_diagnostics(0).await;
+        assert!(!d.is_stub);
         assert!(probe_peers(vec![], 53317, 500).await.is_empty());
-        assert_eq!(describe_start_error(StartError::PortInUse { port: 53317 }), "Port 53317 is already in use");
+        assert_eq!(
+            describe_start_error(StartError::PortInUse { port: 53317 }),
+            "Port 53317 is already in use"
+        );
     }
 }
