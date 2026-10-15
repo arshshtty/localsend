@@ -2,7 +2,7 @@
 //!
 //! The types in this module are the Dart-facing contract for the network
 //! troubleshooter screen. `run_diagnostics` is real (Troubleshooter 2/4);
-//! `probe_peers` is still a stub until 3/4.
+//! `probe_peers` is real since 3/4.
 
 /// Result of trying to join the LocalSend multicast group on one interface.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -122,16 +122,44 @@ pub async fn run_diagnostics(port: u16) -> Diagnostics {
     })
 }
 
-/// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
+/// Probes explicit peer IPs on `port` (source `UserEntered`): the
+/// user-entered `peerIps` and hosts of small extra subnets.
 ///
-/// STUB: returns an empty list. Implemented in a later PR.
+/// Never runs the Tailscale CLI (see [probe_tailscale_peers]). Invalid IPs
+/// are skipped, duplicates probed once; at most 16 probes run at a time,
+/// each within `timeout_ms`, with one shared HTTP client. The app caps
+/// entered peer IPs at 32 per scan.
+///
+/// A peer is `reachable` when its LocalSend `info` endpoint answers (HTTPS or HTTP).
 pub async fn probe_peers(
     peer_ips: Vec<String>,
     port: u16,
     timeout_ms: u32,
 ) -> Vec<PeerProbeResult> {
-    let _ = (peer_ips, port, timeout_ms);
-    Vec::new()
+    crate::peer_probe::probe_ips(peer_ips, port, timeout_ms).await
+}
+
+/// Probes the online peers from `tailscale status --json` on `port`
+/// (source `TailscaleCli`, at most 64 peers, 16 at a time).
+///
+/// Desktop only; a missing or failing CLI quietly returns an empty list.
+/// The app calls this only when the user picked a `tailscale*` interface
+/// in `bindInterfaces`.
+pub async fn probe_tailscale_peers(port: u16, timeout_ms: u32) -> Vec<PeerProbeResult> {
+    crate::peer_probe::probe_tailscale_with(&crate::peer_probe::SystemTailscale, port, timeout_ms)
+        .await
+}
+
+/// Lists the network interfaces cheaply: names, addresses and flags only.
+///
+/// Unlike [run_diagnostics], no multicast joins are attempted (both join
+/// results are `NotAttempted`) and no ports are probed.
+pub async fn list_interfaces() -> Vec<InterfaceDiag> {
+    tokio::task::spawn_blocking(|| {
+        crate::diagnostics_impl::list_interfaces(&crate::diagnostics_impl::SystemInterfaceSource)
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).
@@ -154,7 +182,6 @@ mod tests {
     async fn real_diagnostics_are_not_stub() {
         let d = run_diagnostics(0).await;
         assert!(!d.is_stub);
-        assert!(probe_peers(vec![], 53317, 500).await.is_empty());
         assert_eq!(
             describe_start_error(StartError::PortInUse { port: 53317 }),
             "Port 53317 is already in use"

@@ -21,11 +21,32 @@ part 'diagnostics.freezed.dart';
 /// bind probe is skipped and the status is `HeldByThisApp`.
 Future<Diagnostics> runDiagnostics({required int port}) => RustLib.instance.api.crateApiDiagnosticsRunDiagnostics(port: port);
 
-/// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
+/// Probes explicit peer IPs on `port` (source `UserEntered`): the
+/// user-entered `peerIps` and hosts of small extra subnets.
 ///
-/// STUB: returns an empty list. Implemented in a later PR.
+/// Never runs the Tailscale CLI (see [probe_tailscale_peers]). Invalid IPs
+/// are skipped, duplicates probed once; at most 16 probes run at a time,
+/// each within `timeout_ms`, with one shared HTTP client. The app caps
+/// entered peer IPs at 32 per scan.
+///
+/// A peer is `reachable` when its LocalSend `info` endpoint answers (HTTPS or HTTP).
 Future<List<PeerProbeResult>> probePeers({required List<String> peerIps, required int port, required int timeoutMs}) =>
     RustLib.instance.api.crateApiDiagnosticsProbePeers(peerIps: peerIps, port: port, timeoutMs: timeoutMs);
+
+/// Probes the online peers from `tailscale status --json` on `port`
+/// (source `TailscaleCli`, at most 64 peers, 16 at a time).
+///
+/// Desktop only; a missing or failing CLI quietly returns an empty list.
+/// The app calls this only when the user picked a `tailscale*` interface
+/// in `bindInterfaces`.
+Future<List<PeerProbeResult>> probeTailscalePeers({required int port, required int timeoutMs}) =>
+    RustLib.instance.api.crateApiDiagnosticsProbeTailscalePeers(port: port, timeoutMs: timeoutMs);
+
+/// Lists the network interfaces cheaply: names, addresses and flags only.
+///
+/// Unlike [run_diagnostics], no multicast joins are attempted (both join
+/// results are `NotAttempted`) and no ports are probed.
+Future<List<InterfaceDiag>> listInterfaces() => RustLib.instance.api.crateApiDiagnosticsListInterfaces();
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).
 ///

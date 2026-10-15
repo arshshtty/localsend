@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/model/device.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart' show StartError;
 import 'package:localsend_isolates/rust/api/discovery.dart';
 import 'package:localsend_isolates/rust/api/model.dart' as rust_model;
 import 'package:localsend_isolates/src/isolate/child/sync_provider.dart';
@@ -30,6 +31,24 @@ class DiscoveryService {
   /// Whether the current discovery was stopped by [restartListener], as
   /// opposed to stopping itself because the multicast sockets failed.
   bool _restartRequested = false;
+
+  StartError? _multicastStartError;
+  final _multicastStartErrorController = StreamController<StartError?>.broadcast();
+
+  /// The typed multicast start error of the current discovery (`null` while
+  /// multicast runs): the current value first, then every change.
+  Stream<StartError?> multicastStartErrors() async* {
+    yield _multicastStartError;
+    yield* _multicastStartErrorController.stream;
+  }
+
+  void _setMulticastStartError(StartError? error) {
+    if (error == _multicastStartError) {
+      return;
+    }
+    _multicastStartError = error;
+    _multicastStartErrorController.add(error);
+  }
 
   /// Starts the discovery and emits every device confirmation:
   /// answered announcements, scan results and devices fed in
@@ -78,6 +97,7 @@ class DiscoveryService {
           timeoutMs: BigInt.from(syncState.discoveryTimeout),
         );
       } catch (e) {
+        _setMulticastStartError(e is StartError ? e : StartError.other(e.toString()));
         _logger.warning('Could not start discovery (group: ${syncState.multicastGroup}, port: ${syncState.port})', e);
         // Wait for the next restart request instead of hot-looping
         _retryCompleter = Completer();
@@ -85,6 +105,7 @@ class DiscoveryService {
         continue;
       }
 
+      _setMulticastStartError(await discovery.multicastStartError());
       final multicastError = await discovery.multicastError();
       if (multicastError != null) {
         _logger.warning('Discovery runs without multicast (group: ${syncState.multicastGroup}, port: ${syncState.port}): $multicastError');

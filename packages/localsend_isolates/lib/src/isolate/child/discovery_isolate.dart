@@ -1,4 +1,5 @@
 import 'package:localsend_isolates/model/device.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart' show StartError;
 import 'package:localsend_isolates/src/isolate/child/main.dart';
 import 'package:localsend_isolates/src/isolate/dto/send_to_isolate_data.dart';
 import 'package:localsend_isolates/src/task/discovery/discovery.dart';
@@ -28,6 +29,20 @@ class DiscoveryDeviceLogsResult implements DiscoveryResult {
     required this.logs,
   });
 }
+
+/// The typed multicast start error of the current discovery (`null` when
+/// multicast runs), emitted on the [DiscoveryMulticastStatusTask] stream.
+class DiscoveryMulticastStatusResult implements DiscoveryResult {
+  final StartError? error;
+
+  DiscoveryMulticastStatusResult({
+    required this.error,
+  });
+}
+
+/// Streams the current [DiscoveryMulticastStatusResult] and every change
+/// (each discovery (re)start). Never completes.
+class DiscoveryMulticastStatusTask implements DiscoveryTask {}
 
 /// Starts the discovery and streams every confirmed device.
 /// The stream never completes; it survives [DiscoveryRestartTask]s.
@@ -116,6 +131,16 @@ Future<void> setupDiscoveryIsolate(
               IsolateTaskStreamResult.event(
                 id: task.id,
                 data: DiscoveryDeviceResult(device: device),
+              ),
+            );
+          }
+          return;
+        case DiscoveryMulticastStatusTask():
+          await for (final error in ref.read(discoveryProvider).multicastStartErrors()) {
+            sendToMain(
+              IsolateTaskStreamResult.event(
+                id: task.id,
+                data: DiscoveryMulticastStatusResult(error: error),
               ),
             );
           }

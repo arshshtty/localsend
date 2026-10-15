@@ -1,0 +1,25 @@
+{
+  "Version": "1.76.1",
+  "BackendState": "Running",
+  "Self": {
+    "HostName": "this-laptop",
+    "TailscaleIPs": ["100.64.0.5", "fd7a:115c:a1e0::5"],
+    "Online": true
+  },
+  "Peer": {
+    "nodekey:aaaa": {
+      "HostName": "desktop",
+      "TailscaleIPs": ["fd7a:115c:a1e0::1", "127.0.0.1"],
+      "Online": true
+    },
+    "nodekey:bbbb": {
+      "HostName": "old-phone",
+      "TailscaleIPs": ["100.64.0.9"],
+      "Online": false
+    },
+    "nodekey:cccc": {
+      "HostName": "no-ips",
+      "Online": true
+    }
+  }
+}

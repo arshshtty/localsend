@@ -8,7 +8,7 @@
 //! [`start`] binds the sockets and emits a [`MulticastEvent`] per announcement;
 //! the returned [`MulticastHandle`] drives the application-initiated side.
 
-mod socket;
+pub(crate) mod socket;
 
 use crate::model::discovery::{DeviceType, MulticastMessageV2, ProtocolType};
 use crate::util::interface::InterfaceFilter;

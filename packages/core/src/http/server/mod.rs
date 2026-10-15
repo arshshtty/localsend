@@ -13,6 +13,7 @@ use crate::http::server::internal::{InternalConfig, InternalState};
 use crate::http::server::v2::ServerEventV2;
 use crate::http::server::web::{WebConfig, WebShare};
 use crate::http::state::ClientInfo;
+use crate::util::interface::InterfaceFilter;
 use common::client_cert_verifier::CustomClientCertVerifier;
 use common::error::AppError;
 use common::response;
@@ -161,12 +162,27 @@ impl ServerHandle {
     ///
     /// Empty when the interfaces cannot be enumerated.
     pub fn local_addresses(&self) -> Vec<SocketAddr> {
+        self.local_addresses_filtered(&InterfaceFilter::default())
+    }
+
+    /// Like [Self::local_addresses], restricted to the interfaces that pass
+    /// `filter` (e.g. only `tailscale0` via [InterfaceFilter::interface_names]).
+    ///
+    /// The listeners stay on the wildcard address so the server survives
+    /// address changes; the filter decides which addresses are advertised.
+    pub fn local_addresses_filtered(&self, filter: &InterfaceFilter) -> Vec<SocketAddr> {
         let Ok(interfaces) = if_addrs::get_if_addrs() else {
             return Vec::new();
         };
+        // Filters apply to an interface as a whole.
+        let mut by_name: std::collections::HashMap<String, Vec<IpAddr>> = std::collections::HashMap::new();
+        for interface in &interfaces {
+            by_name.entry(interface.name.clone()).or_default().push(interface.ip());
+        }
         let mut addresses: Vec<SocketAddr> = interfaces
             .into_iter()
             .filter(|interface| !interface.is_loopback())
+            .filter(|interface| !filter.is_ignored(&interface.name, &by_name[&interface.name]))
             .filter_map(|interface| match interface.ip() {
                 IpAddr::V4(address) => Some(SocketAddr::new(address.into(), self.port)),
                 IpAddr::V6(address) if self.ipv6_bound && !address.is_unicast_link_local() => {

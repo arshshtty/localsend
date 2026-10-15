@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:localsend_isolates/model/device.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart' show StartError;
 import 'package:localsend_isolates/rust/api/server.dart' show WebParams;
 import 'package:localsend_isolates/src/isolate/child/discovery_isolate.dart';
 import 'package:localsend_isolates/src/isolate/child/server_isolate.dart';
@@ -30,6 +31,27 @@ class IsolateDiscoveryListenAction extends ReduxActionWithResult<IsolateControll
             task: DiscoveryListenTask(),
           )
           .toDeviceStream(),
+    );
+  }
+}
+
+/// Streams the typed multicast start error of the discovery (`null` while
+/// multicast runs): the current value first, then every change.
+class IsolateDiscoveryMulticastStatusAction extends ReduxActionWithResult<IsolateController, ParentIsolateState, Stream<StartError?>> {
+  @override
+  (ParentIsolateState, Stream<StartError?>) reduce() {
+    final connection = state.discovery;
+    if (connection == null) {
+      throw StateError('discovery is not initialized');
+    }
+
+    return (
+      state,
+      connection
+          .sendWrappedTaskAndListenStream(
+            task: DiscoveryMulticastStatusTask(),
+          )
+          .map((result) => (result as DiscoveryMulticastStatusResult).error),
     );
   }
 }

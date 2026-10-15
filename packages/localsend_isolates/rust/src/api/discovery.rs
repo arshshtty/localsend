@@ -208,6 +208,8 @@ pub async fn start_discovery(
             interface_filter: InterfaceFilter {
                 whitelist: network_whitelist,
                 blacklist: network_blacklist,
+                // Wired to the `bindInterfaces` setting in Troubleshooter 4/4.
+                interface_names: None,
             },
             device: MulticastDevice {
                 alias,
@@ -274,9 +276,7 @@ impl RsDiscovery {
                     DiscoveryEvent::Discovered { device } | DiscoveryEvent::Updated { device },
                 ) => device,
                 Some(DiscoveryEvent::MulticastFailed) => {
-                    tracing::error!(
-                        "Multicast sockets failed, ending the discovery event stream"
-                    );
+                    tracing::error!("Multicast sockets failed, ending the discovery event stream");
                     break;
                 }
                 None => break,
