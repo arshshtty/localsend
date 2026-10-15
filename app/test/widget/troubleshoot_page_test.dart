@@ -125,7 +125,7 @@ void main() {
     expect(find.text(t.troubleshootPage.noDiscovery.symptom), findsOneWidget);
   });
 
-  testWidgets('picking an interface writes bindInterfaces', (tester) async {
+  testWidgets('picking an interface dispatches SetBindInterfacesAction', (tester) async {
     final c = await _pump(tester);
     await tester.tap(find.byKey(const ValueKey('iface-tailscale0')));
     await tester.pumpAndSettle();
@@ -205,27 +205,25 @@ void main() {
     expect(find.text('Port 53318 in use — change port or quit the other app'), findsOneWidget);
   });
 
-  testWidgets('subnet editor accepts /24 and rejects larger ranges', (tester) async {
+  testWidgets('subnet editor accepts /26 and rejects larger ranges', (tester) async {
     final c = await _pump(tester);
     final field = find.descendant(of: find.byKey(const ValueKey('extra-subnets')), matching: find.byType(TextField));
     final add = find.descendant(of: find.byKey(const ValueKey('extra-subnets')), matching: find.text('Add'));
-    await tester.enterText(field, '10.0.0.0/16');
+    for (final tooLarge in ['10.0.0.0/16', '10.0.5.0/24', '10.0.5.0/25', '10.0.6.*']) {
+      await tester.enterText(field, tooLarge);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Range too large'), findsOneWidget, reason: tooLarge);
+      expect(c.read(settingsProvider).extraSubnets, isEmpty);
+    }
+    await tester.enterText(field, '10.0.5.0/26');
     await tester.tap(add);
     await tester.pumpAndSettle();
-    expect(find.textContaining('Range too large'), findsOneWidget);
-    expect(c.read(settingsProvider).extraSubnets, isEmpty);
-    await tester.enterText(field, '10.0.5.0/24');
+    expect(c.read(settingsProvider).extraSubnets, ['10.0.5.0/26']);
+    await tester.enterText(field, '10.0.5.0/26');
     await tester.tap(add);
     await tester.pumpAndSettle();
-    expect(c.read(settingsProvider).extraSubnets, ['10.0.5.0/24']);
-    await tester.enterText(field, '10.0.6.*');
-    await tester.tap(add);
-    await tester.pumpAndSettle();
-    expect(c.read(settingsProvider).extraSubnets, ['10.0.5.0/24', '10.0.6.*']);
-    await tester.enterText(field, '10.0.6.0/24');
-    await tester.tap(add);
-    await tester.pumpAndSettle();
-    expect(c.read(settingsProvider).extraSubnets, ['10.0.5.0/24', '10.0.6.*']);
+    expect(c.read(settingsProvider).extraSubnets, ['10.0.5.0/26']);
   });
 
   testWidgets('peer IPs field saves', (tester) async {

@@ -4,6 +4,7 @@ import 'package:localsend_app/config/theme.dart';
 import 'package:localsend_app/pages/tabs/send_tab.dart' show pickerOptions;
 import 'package:localsend_app/provider/diagnostics_provider.dart';
 import 'package:localsend_app/provider/local_ip_provider.dart';
+import 'package:localsend_app/provider/network/bind_interfaces_action.dart';
 import 'package:localsend_app/provider/network/send_provider.dart';
 import 'package:localsend_app/provider/network/server/server_provider.dart';
 import 'package:localsend_app/provider/security_provider.dart';
@@ -129,7 +130,7 @@ class _NetworkDiagnosticsSectionState extends State<NetworkDiagnosticsSection> w
               title: 'Network interfaces',
               trailing: IconButton(tooltip: 'Check again', icon: const Icon(Icons.refresh), onPressed: _run),
               children: [
-                const Text('Choose the networks LocalSend should use (not applied yet). With none selected, all are used.'),
+                const Text('Choose the networks LocalSend uses for discovery, scans and the addresses it shows. With none selected, all are used.'),
                 const SizedBox(height: 10),
                 if (snapshot.connectionState != ConnectionState.done)
                   const Center(child: CircularProgressIndicator())
@@ -148,10 +149,10 @@ class _NetworkDiagnosticsSectionState extends State<NetworkDiagnosticsSection> w
             ),
             _ListEditor(
               key: const ValueKey('extra-subnets'),
-              title: 'Extra subnets to scan (not used yet)',
+              title: 'Extra subnets to scan',
               description:
-                  'Ranges to scan for devices, like 192.168.5.0/24 or 192.168.5.* (up to 256 addresses each). They are saved, but scanning them comes in a later update.',
-              hint: '192.168.5.0/24',
+                  'Ranges to scan for devices, like 192.168.5.0/26 (up to 64 addresses each, 96 addresses in total across scans).',
+              hint: '192.168.5.0/26',
               values: settings.extraSubnets,
               validate: validateSubnet,
               normalize: normalizeSubnet,
@@ -159,9 +160,9 @@ class _NetworkDiagnosticsSectionState extends State<NetworkDiagnosticsSection> w
             ),
             _ListEditor(
               key: const ValueKey('peer-ips'),
-              title: 'Known peer IPs (not used yet)',
+              title: 'Known peer IPs',
               description:
-                  'Addresses of other devices, for example Tailscale IPs (100.x.y.z). They are saved, but checking them comes in a later update. After "Send by IP:port" reaches a device, you can choose to remember its address here.',
+                  'Addresses of other devices, for example Tailscale IPs (100.x.y.z). LocalSend checks them directly during scans. After you type an address in "Send by IP:port" and it reaches a device, you can choose to remember it here.',
               hint: '100.64.0.2',
               values: settings.peerIps,
               validate: (s) => isValidIp(s) ? null : 'Enter an IP address, for example 100.64.0.2',
@@ -240,7 +241,7 @@ class _InterfaceTable extends StatelessWidget {
                     } else {
                       current.remove(iface.name);
                     }
-                    await context.ref.notifier(settingsProvider).setBindInterfaces(current);
+                    await context.ref.global.dispatchAsync(SetBindInterfacesAction(current));
                   },
             title: Wrap(
               spacing: 8,
