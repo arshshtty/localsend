@@ -5,12 +5,13 @@
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
+import 'package:localsend_isolates/rust/api/diagnostics.dart';
 import 'package:localsend_isolates/rust/api/model.dart';
 import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'server.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `handle_server_event`, `handle_web_event`, `recv_opt`, `resolve_file_content`, `resolve_upload_target`, `stop`
+// These functions are ignored because they are not marked as `pub`: `handle_server_event`, `handle_web_event`, `recv_opt`, `resolve_file_content`, `resolve_upload_target`, `running_server_port`, `stop`
 // These types are ignored because they are neither used by any `pub` functions nor (for structs and enums) marked `#[frb(unignore)]`: `ServerInstance`
 
 /// Starts the HTTP server on the given port (IPv4 and IPv6).
@@ -26,6 +27,9 @@ part 'server.freezed.dart';
 /// [RsServerEvent::Show]). The token guards the endpoint against other clients.
 ///
 /// Events are received by listening to [RsHttpServer::listen].
+///
+/// Fails with a typed [crate::api::diagnostics::StartError], e.g.
+/// `PortInUse` when `port` is already bound by another process.
 Future<RsHttpServer> startServer({
   required int port,
   TlsConfig? tls,

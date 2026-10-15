@@ -14,12 +14,19 @@ import 'package:localsend_app/util/native/web_pages_loader.dart';
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/isolate.dart';
 import 'package:localsend_isolates/model/dto/multicast_dto.dart';
+import 'package:localsend_isolates/model/server_start_exception.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart' show StartError;
 import 'package:localsend_isolates/rust/api/server.dart' show WebI18n, WebMode, WebParams;
 import 'package:localsend_isolates/util/rust.dart';
 import 'package:logging/logging.dart';
 import 'package:refena_flutter/refena_flutter.dart';
 
 final _logger = Logger('Server');
+
+/// The typed reason the last server start failed, or `null` after a successful
+/// start. Lets the UI show e.g. a "port in use" banner for
+/// `StartError.portInUse` without parsing error strings.
+final serverStartErrorProvider = StateProvider<StartError?>((ref) => null);
 
 /// This provider runs the server and provides the current server state.
 /// It is a singleton provider, so only one server can be running at a time.
@@ -207,10 +214,16 @@ class ServerService extends Notifier<ServerState?> {
     } catch (e) {
       await subscription.cancel();
       _syncServerState(alias: alias, port: port, https: https, serverRunning: false, download: false);
-      _logger.warning('Failed to start server', e);
-      rethrow;
+      final typed = switch (e) {
+        ServerStartException() => e,
+        _ => ServerStartException(error: StartError.other(e.toString()), message: e.toString()),
+      };
+      _logger.warning('Failed to start server (${typed.error})', typed);
+      ref.notifier(serverStartErrorProvider).setState((_) => typed.error);
+      throw typed;
     }
 
+    ref.notifier(serverStartErrorProvider).setState((_) => null);
     _subscription = subscription;
 
     final newServerState = ServerState(

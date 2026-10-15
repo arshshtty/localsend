@@ -9,11 +9,16 @@ import 'package:localsend_isolates/rust/frb_generated.dart';
 
 part 'diagnostics.freezed.dart';
 
-// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
+// These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `assert_fields_are_eq`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `clone`, `eq`, `eq`, `eq`, `eq`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Runs network diagnostics for `port`.
 ///
-/// STUB: returns fixed fake data with `is_stub = true`.
+/// Lists every interface (including ones that cannot carry multicast),
+/// tries joining the LocalSend multicast group (v4/v6) on a throwaway socket
+/// per interface, and probes whether the TCP/UDP `port` can be bound.
+///
+/// While this app's server (TCP) or discovery (UDP) runs on `port`, the
+/// bind probe is skipped and the status is `HeldByThisApp`.
 Future<Diagnostics> runDiagnostics({required int port}) => RustLib.instance.api.crateApiDiagnosticsRunDiagnostics(port: port);
 
 /// Probes peers (Tailscale CLI peers on desktop, plus `peer_ips`) on `port`.
@@ -24,8 +29,6 @@ Future<List<PeerProbeResult>> probePeers({required List<String> peerIps, require
 
 /// Human-readable message for a [StartError] (English fallback for logs/UI).
 ///
-/// Also makes `StartError` part of the generated Dart contract ahead of
-/// Troubleshooter PR 2/4, where `start_server` starts returning it.
 String describeStartError({required StartError error}) => RustLib.instance.api.crateApiDiagnosticsDescribeStartError(error: error);
 
 /// Full diagnostics report.

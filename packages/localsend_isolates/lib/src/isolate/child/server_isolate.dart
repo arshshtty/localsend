@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:localsend_isolates/constants.dart';
 import 'package:localsend_isolates/model/dto/multicast_dto.dart';
 import 'package:localsend_isolates/model/file_type.dart';
+import 'package:localsend_isolates/model/server_start_exception.dart';
+import 'package:localsend_isolates/rust/api/diagnostics.dart' show StartError, describeStartError;
 import 'package:localsend_isolates/rust/api/model.dart' show FileDto;
 import 'package:localsend_isolates/rust/api/server.dart';
 import 'package:localsend_isolates/src/isolate/child/main.dart';
@@ -422,11 +424,16 @@ Future<void> setupHttpServerIsolate(
                 );
           } catch (e) {
             // Starting failed (e.g. the port is already in use).
-            // The error must be sendable across the isolate boundary.
+            // The error must be sendable across the isolate boundary;
+            // a plain Dart object is fine within the same isolate group.
+            final error = e is StartError ? e : StartError.other(e.humanErrorMessage);
             sendToMain(
               IsolateTaskStreamResult.error(
                 id: task.id,
-                error: e.humanErrorMessage,
+                error: ServerStartException(
+                  error: error,
+                  message: describeStartError(error: error),
+                ),
               ),
             );
             return;

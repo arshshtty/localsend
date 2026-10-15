@@ -145,6 +145,11 @@ impl ServerInstance {
 /// binding again.
 static RUNNING_SERVER: Mutex<Option<Arc<ServerInstance>>> = Mutex::const_new(None);
 
+/// The TCP port of the running server, if any (for diagnostics).
+pub(crate) async fn running_server_port() -> Option<u16> {
+    RUNNING_SERVER.lock().await.as_ref().map(|s| s.handle.port())
+}
+
 /// Configuration for the pages served to browsers. Always part of the server
 /// configuration: even with web share disabled ([WebMode::Disabled]), the
 /// server serves the 403 page at `/`.
@@ -199,6 +204,9 @@ pub enum WebMode {
 /// [RsServerEvent::Show]). The token guards the endpoint against other clients.
 ///
 /// Events are received by listening to [RsHttpServer::listen].
+///
+/// Fails with a typed [crate::api::diagnostics::StartError], e.g.
+/// `PortInUse` when `port` is already bound by another process.
 pub async fn start_server(
     port: u16,
     tls: Option<TlsConfig>,
@@ -211,7 +219,7 @@ pub async fn start_server(
     verify_checksums: bool,
     web: WebParams,
     show_token: Option<String>,
-) -> anyhow::Result<RsHttpServer> {
+) -> Result<RsHttpServer, crate::api::diagnostics::StartError> {
     // Stop a server left over from before a hot restart (its Dart owner died
     // without calling stop)
     let mut running_server = RUNNING_SERVER.lock().await;
@@ -272,7 +280,11 @@ pub async fn start_server(
         web_config,
         stop_rx,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        tracing::warn!("Failed to start server: {e:?}");
+        crate::diagnostics_impl::start_error_from_anyhow(&e, port)
+    })?;
 
     let instance = Arc::new(ServerInstance {
         handle,
