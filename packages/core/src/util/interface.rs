@@ -183,6 +183,38 @@ pub(crate) fn local_interfaces(filter: &InterfaceFilter) -> std::io::Result<Loca
     Ok(result)
 }
 
+/// The addresses a server restricted by `filter` binds to: the IPv4 and
+/// non-link-local IPv6 addresses of the interfaces passing `filter`
+/// (loopback included when named explicitly).
+pub fn interface_bind_addresses(filter: &InterfaceFilter) -> std::io::Result<Vec<IpAddr>> {
+    let interfaces = if_addrs::get_if_addrs()?;
+    let mut by_name: std::collections::HashMap<String, Vec<IpAddr>> = std::collections::HashMap::new();
+    for interface in &interfaces {
+        by_name.entry(interface.name.clone()).or_default().push(interface.ip());
+    }
+    let mut addresses: Vec<IpAddr> = interfaces
+        .iter()
+        .filter(|interface| !filter.is_ignored(&interface.name, &by_name[&interface.name]))
+        .map(|interface| interface.ip())
+        .filter(|ip| match ip {
+            IpAddr::V4(_) => true,
+            IpAddr::V6(v6) => !v6.is_unicast_link_local(),
+        })
+        .collect();
+    // IPv4 first, so the primary listener is IPv4 when there is one.
+    addresses.sort_by_key(|ip| (ip.is_ipv6(), *ip));
+    addresses.dedup();
+    Ok(addresses)
+}
+
+/// Names of the local interfaces (for validating saved interface names).
+pub fn interface_names() -> std::io::Result<Vec<String>> {
+    let mut names: Vec<String> = if_addrs::get_if_addrs()?.into_iter().map(|i| i.name).collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
 /// The IPv4 addresses of all usable (non-loopback, unfiltered) local
 /// interfaces, e.g. the subnets to fall back-scan when multicast is silent.
 pub fn local_interface_addresses(filter: &InterfaceFilter) -> std::io::Result<Vec<Ipv4Addr>> {
@@ -326,7 +358,7 @@ mod tests {
         }
         let exe = std::env::current_exe().unwrap();
         let script = format!(
-            "set -e; ip link add v0 type veth peer name v1; \
+            "set -e; ip link set lo up; ip link add v0 type veth peer name v1; \
              ip addr add 10.78.0.1/24 dev v0; ip addr add 10.78.1.1/24 dev v1; \
              ip link set v0 up; ip link set v1 up; \
              LS_NETNS_INNER=1 '{}' --exact util::interface::tests::netns_inner_interface_names --ignored",
@@ -378,5 +410,37 @@ mod tests {
             });
         let sockets = sockets.expect("bind on v1");
         assert_eq!(sockets.len(), 1);
+
+        // The HTTP server listens only on v1's address.
+        assert_eq!(interface_bind_addresses(&only_v1).unwrap(), vec!["10.78.1.1".parse::<IpAddr>().unwrap()]);
+        rt.block_on(async {
+            let (_stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+            let handle = crate::http::server::start_with_port_filtered(
+                0,
+                None,
+                crate::http::state::ClientInfo {
+                    alias: "netns".into(),
+                    version: "2.1".into(),
+                    device_model: None,
+                    device_type: None,
+                    token: "t".into(),
+                },
+                None,
+                None,
+                Default::default(),
+                stop_rx,
+                &only_v1,
+            )
+            .await
+            .expect("server starts on v1");
+            let port = handle.port();
+            let connect = |ip: &'static str| async move {
+                tokio::time::timeout(std::time::Duration::from_secs(2), tokio::net::TcpStream::connect((ip, port)))
+                    .await
+                    .is_ok_and(|r| r.is_ok())
+            };
+            assert!(connect("10.78.1.1").await, "v1 must accept");
+            assert!(!connect("10.78.0.1").await, "v0 must refuse");
+        });
     }
 }

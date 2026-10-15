@@ -3475,6 +3475,7 @@ fn wire__crate__api__discovery__start_discovery_impl(
             let api_port = <u16>::sse_decode(&mut deserializer);
             let api_network_whitelist = <Option<Vec<String>>>::sse_decode(&mut deserializer);
             let api_network_blacklist = <Option<Vec<String>>>::sse_decode(&mut deserializer);
+            let api_bind_interfaces = <Vec<String>>::sse_decode(&mut deserializer);
             let api_alias = <String>::sse_decode(&mut deserializer);
             let api_version = <String>::sse_decode(&mut deserializer);
             let api_device_model = <Option<String>>::sse_decode(&mut deserializer);
@@ -3495,6 +3496,7 @@ fn wire__crate__api__discovery__start_discovery_impl(
                             api_port,
                             api_network_whitelist,
                             api_network_blacklist,
+                            api_bind_interfaces,
                             api_alias,
                             api_version,
                             api_device_model,
@@ -3549,6 +3551,7 @@ fn wire__crate__api__server__start_server_impl(
             let api_verify_checksums = <bool>::sse_decode(&mut deserializer);
             let api_web = <crate::api::server::WebParams>::sse_decode(&mut deserializer);
             let api_show_token = <Option<String>>::sse_decode(&mut deserializer);
+            let api_bind_interfaces = <Vec<String>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| async move {
                 transform_result_sse::<_, crate::api::diagnostics::StartError>(
@@ -3565,6 +3568,7 @@ fn wire__crate__api__server__start_server_impl(
                             api_verify_checksums,
                             api_web,
                             api_show_token,
+                            api_bind_interfaces,
                         )
                         .await?;
                         Ok(output_ok)

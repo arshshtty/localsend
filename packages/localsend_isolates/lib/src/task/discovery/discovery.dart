@@ -85,6 +85,7 @@ class DiscoveryService {
           port: syncState.port,
           networkWhitelist: syncState.networkWhitelist,
           networkBlacklist: syncState.networkBlacklist,
+          bindInterfaces: syncState.bindInterfaces,
           alias: syncState.alias,
           version: protocolVersion,
           deviceModel: syncState.deviceInfo.deviceModel,

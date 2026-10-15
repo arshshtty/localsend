@@ -28,6 +28,10 @@ part 'server.freezed.dart';
 ///
 /// Events are received by listening to [RsHttpServer::listen].
 ///
+/// A non-empty [bind_interfaces] restricts the listeners to those interfaces'
+/// addresses; names that don't exist are ignored, and when none exists the
+/// server listens on all interfaces.
+///
 /// Fails with a typed [crate::api::diagnostics::StartError], e.g.
 /// `PortInUse` when `port` is already bound by another process.
 Future<RsHttpServer> startServer({
@@ -42,6 +46,7 @@ Future<RsHttpServer> startServer({
   required bool verifyChecksums,
   required WebParams web,
   String? showToken,
+  required List<String> bindInterfaces,
 }) => RustLib.instance.api.crateApiServerStartServer(
   port: port,
   tls: tls,
@@ -54,6 +59,7 @@ Future<RsHttpServer> startServer({
   verifyChecksums: verifyChecksums,
   web: web,
   showToken: showToken,
+  bindInterfaces: bindInterfaces,
 );
 
 // Rust type: RustOpaqueMoi<flutter_rust_bridge::for_generated::RustAutoOpaqueInner<RsHttpServer>>

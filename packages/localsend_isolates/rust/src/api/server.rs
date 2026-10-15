@@ -209,6 +209,10 @@ pub enum WebMode {
 ///
 /// Events are received by listening to [RsHttpServer::listen].
 ///
+/// A non-empty [bind_interfaces] restricts the listeners to those interfaces'
+/// addresses; names that don't exist are ignored, and when none exists the
+/// server listens on all interfaces.
+///
 /// Fails with a typed [crate::api::diagnostics::StartError], e.g.
 /// `PortInUse` when `port` is already bound by another process.
 pub async fn start_server(
@@ -223,6 +227,7 @@ pub async fn start_server(
     verify_checksums: bool,
     web: WebParams,
     show_token: Option<String>,
+    bind_interfaces: Vec<String>,
 ) -> Result<RsHttpServer, crate::api::diagnostics::StartError> {
     // Stop a server left over from before a hot restart (its Dart owner died
     // without calling stop)
@@ -265,7 +270,11 @@ pub async fn start_server(
         None => (None, None),
     };
 
-    let handle = localsend::http::server::start_with_port(
+    let filter = localsend::util::interface::InterfaceFilter {
+        interface_names: crate::diagnostics_impl::resolve_bind_interfaces_now(bind_interfaces),
+        ..Default::default()
+    };
+    let handle = localsend::http::server::start_with_port_filtered(
         port,
         tls,
         ClientInfo {
@@ -283,6 +292,7 @@ pub async fn start_server(
         }),
         web_config,
         stop_rx,
+        &filter,
     )
     .await
     .map_err(|e| {

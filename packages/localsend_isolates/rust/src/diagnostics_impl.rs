@@ -206,6 +206,42 @@ pub(crate) fn list_interfaces(source: &dyn InterfaceSource) -> Vec<InterfaceDiag
     }
 }
 
+/// Resolves the `bindInterfaces` setting to `InterfaceFilter::interface_names`.
+///
+/// Empty means all interfaces (`None`). Names that don't exist (e.g. a VPN
+/// that is down) are dropped; when none of them exists, falls back to all
+/// interfaces and logs it, so a stale setting can't silently disable LocalSend.
+pub(crate) fn resolve_bind_interfaces(
+    names: Vec<String>,
+    existing: &[String],
+) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let present: Vec<String> = names
+        .iter()
+        .filter(|n| existing.contains(n))
+        .cloned()
+        .collect();
+    if present.is_empty() {
+        tracing::warn!("None of the selected interfaces {names:?} exists; using all interfaces");
+        return None;
+    }
+    if present.len() < names.len() {
+        tracing::info!("Selected interfaces {names:?}; only {present:?} exist");
+    }
+    Some(present)
+}
+
+/// [resolve_bind_interfaces] against the current system interfaces.
+pub(crate) fn resolve_bind_interfaces_now(names: Vec<String>) -> Option<Vec<String>> {
+    if names.is_empty() {
+        return None;
+    }
+    let existing = localsend::util::interface::interface_names().unwrap_or_default();
+    resolve_bind_interfaces(names, &existing)
+}
+
 /// TCP bind probe on the wildcard address, like the HTTP server does.
 pub(crate) fn probe_tcp(port: u16) -> PortStatus {
     match std::net::TcpListener::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port)) {
@@ -502,6 +538,20 @@ mod tests {
         assert_eq!(by("v6only").join_v4, JoinResult::NotAttempted);
         assert_eq!(by("v6only").join_v6, JoinResult::Ok);
         assert_eq!(source.v4_calls.get(), 2);
+    }
+
+    #[test]
+    fn bind_interfaces_resolve_with_fallback() {
+        let existing = vec!["eth0".to_string(), "tailscale0".to_string()];
+        assert_eq!(resolve_bind_interfaces(vec![], &existing), None);
+        assert_eq!(
+            resolve_bind_interfaces(vec!["tailscale0".into(), "gone0".into()], &existing),
+            Some(vec!["tailscale0".to_string()])
+        );
+        assert_eq!(
+            resolve_bind_interfaces(vec!["gone0".into()], &existing),
+            None
+        );
     }
 
     #[test]

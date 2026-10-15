@@ -421,6 +421,7 @@ Future<void> setupHttpServerIsolate(
                   verifyChecksums: startTask.verifyChecksums,
                   web: startTask.web,
                   showToken: startTask.showToken,
+                  bindInterfaces: syncState.bindInterfaces,
                 );
           } catch (e) {
             // Starting failed (e.g. the port is already in use).
