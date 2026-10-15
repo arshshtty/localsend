@@ -279,6 +279,60 @@ class MockPersistenceService extends _i1.Mock implements _i4.PersistenceService 
           as _i5.Future<void>);
 
   @override
+  List<String> getBindInterfaces() =>
+      (super.noSuchMethod(
+            Invocation.method(#getBindInterfaces, []),
+            returnValue: <String>[],
+            returnValueForMissingStub: <String>[],
+          )
+          as List<String>);
+
+  @override
+  _i5.Future<void> setBindInterfaces(List<String>? interfaces) =>
+      (super.noSuchMethod(
+            Invocation.method(#setBindInterfaces, [interfaces]),
+            returnValue: _i5.Future<void>.value(),
+            returnValueForMissingStub: _i5.Future<void>.value(),
+          )
+          as _i5.Future<void>);
+
+  @override
+  List<String> getExtraSubnets() =>
+      (super.noSuchMethod(
+            Invocation.method(#getExtraSubnets, []),
+            returnValue: <String>[],
+            returnValueForMissingStub: <String>[],
+          )
+          as List<String>);
+
+  @override
+  _i5.Future<void> setExtraSubnets(List<String>? subnets) =>
+      (super.noSuchMethod(
+            Invocation.method(#setExtraSubnets, [subnets]),
+            returnValue: _i5.Future<void>.value(),
+            returnValueForMissingStub: _i5.Future<void>.value(),
+          )
+          as _i5.Future<void>);
+
+  @override
+  List<String> getPeerIps() =>
+      (super.noSuchMethod(
+            Invocation.method(#getPeerIps, []),
+            returnValue: <String>[],
+            returnValueForMissingStub: <String>[],
+          )
+          as List<String>);
+
+  @override
+  _i5.Future<void> setPeerIps(List<String>? ips) =>
+      (super.noSuchMethod(
+            Invocation.method(#setPeerIps, [ips]),
+            returnValue: _i5.Future<void>.value(),
+            returnValueForMissingStub: _i5.Future<void>.value(),
+          )
+          as _i5.Future<void>);
+
+  @override
   _i5.Future<void> setNetworkBlacklist(List<String>? blacklist) =>
       (super.noSuchMethod(
             Invocation.method(#setNetworkBlacklist, [blacklist]),
@@ -618,6 +672,24 @@ class MockPersistenceService extends _i1.Mock implements _i4.PersistenceService 
   bool getSaveWindowPlacement() =>
       (super.noSuchMethod(
             Invocation.method(#getSaveWindowPlacement, []),
+            returnValue: false,
+            returnValueForMissingStub: false,
+          )
+          as bool);
+
+  @override
+  _i5.Future<void> setAlwaysOnTop(bool? alwaysOnTop) =>
+      (super.noSuchMethod(
+            Invocation.method(#setAlwaysOnTop, [alwaysOnTop]),
+            returnValue: _i5.Future<void>.value(),
+            returnValueForMissingStub: _i5.Future<void>.value(),
+          )
+          as _i5.Future<void>);
+
+  @override
+  bool getAlwaysOnTop() =>
+      (super.noSuchMethod(
+            Invocation.method(#getAlwaysOnTop, []),
             returnValue: false,
             returnValueForMissingStub: false,
           )

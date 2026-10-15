@@ -57,6 +57,9 @@ class SettingsService extends PureNotifier<SettingsState> {
     port: _persistence.getPort(),
     networkWhitelist: _persistence.getNetworkWhitelist(),
     networkBlacklist: _persistence.getNetworkBlacklist(),
+    bindInterfaces: _persistence.getBindInterfaces(),
+    extraSubnets: _persistence.getExtraSubnets(),
+    peerIps: _persistence.getPeerIps(),
     multicastGroup: _persistence.getMulticastGroup(),
     destination: _persistence.getDestination(),
     saveToGallery: _persistence.isSaveToGallery(),
@@ -134,6 +137,27 @@ class SettingsService extends PureNotifier<SettingsState> {
     await _persistence.setNetworkWhitelist(whitelist);
     state = state.copyWith(
       networkWhitelist: whitelist,
+    );
+  }
+
+  Future<void> setBindInterfaces(List<String> bindInterfaces) async {
+    await _persistence.setBindInterfaces(bindInterfaces);
+    state = state.copyWith(
+      bindInterfaces: bindInterfaces,
+    );
+  }
+
+  Future<void> setExtraSubnets(List<String> extraSubnets) async {
+    await _persistence.setExtraSubnets(extraSubnets);
+    state = state.copyWith(
+      extraSubnets: extraSubnets,
+    );
+  }
+
+  Future<void> setPeerIps(List<String> peerIps) async {
+    await _persistence.setPeerIps(peerIps);
+    state = state.copyWith(
+      peerIps: peerIps,
     );
   }
 
